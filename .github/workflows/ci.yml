@@ -8,5 +8,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: {go-version: '1.25.13'}
-      - run: gofmt -d internal | (! grep .)
+      - run: test -z "$(gofmt -d product credit-risk pricing policies decisions audit)"
       - run: go test ./...

@@ -1,9 +1,9 @@
-package credit
+package creditrisk
 
 import (
 	"context"
-	"github.com/Mightyfin/decision-engine/internal/pricing"
-	"github.com/Mightyfin/decision-engine/internal/product"
+	"github.com/Mightyfin/decision-engine/pricing"
+	"github.com/Mightyfin/decision-engine/product"
 	"testing"
 	"time"
 )
