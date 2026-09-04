@@ -7,6 +7,7 @@ import (
 	"time"
 
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
+	"github.com/Mightyfin/decision-engine/pricing"
 	"github.com/Mightyfin/decision-engine/product"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +22,25 @@ func (s Postgres) Policy(ctx context.Context, tenantID, id string) (product.Poli
 		return p, product.ErrNotFound
 	}
 	return p, err
+}
+
+// PricingPolicy returns the exact active policy selected by an analyst. Rates never arrive from
+// an EFaaS tenant request or a browser form.
+func (s Postgres) PricingPolicy(ctx context.Context, tenantID, productPolicyID string) (pricing.Policy, error) {
+	var p pricing.Policy
+	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,origination_fee_bps,active FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true ORDER BY version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.ProductPolicyID, &p.Version, &p.AnnualRateBPS, &p.OriginationFeeBPS, &p.Active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, creditrisk.ErrNotFound
+	}
+	if err != nil {
+		return p, err
+	}
+	productPolicy, err := s.Policy(ctx, tenantID, productPolicyID)
+	if err != nil {
+		return p, err
+	}
+	p.ProductPolicyVersion, p.Currency = productPolicy.Version, productPolicy.Currency
+	return p, nil
 }
 func (s Postgres) Application(ctx context.Context, id string) (creditrisk.Application, error) {
 	var a creditrisk.Application
