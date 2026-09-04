@@ -1,0 +1,128 @@
+package credit
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Mightyfin/decision-engine/internal/pricing"
+	"github.com/Mightyfin/decision-engine/internal/product"
+)
+
+var (
+	ErrNotFound     = errors.New("credit application not found")
+	ErrInvalidState = errors.New("invalid credit lifecycle transition")
+)
+
+type Application struct {
+	ID, TenantID, ProductPolicyID, RelationshipID, Currency, Purpose, Status string
+	Amount                                                                   int64
+	TermDays                                                                 int
+	ProductPolicyVersion                                                     int
+	SubmittedAt                                                              time.Time
+}
+type Offer struct {
+	ApplicationID, QuoteID                     string
+	ProductPolicyVersion, PricingPolicyVersion int
+	Principal, Interest, Fees, Total           int64
+	TermDays                                   int
+	ExpiresAt                                  time.Time
+}
+type Exposure struct{ ApprovedLimit, Reserved, Utilised int64 }
+type Audit struct {
+	ApplicationID, Actor, Action, Reason string
+	At                                   time.Time
+}
+type Store interface {
+	Application(context.Context, string) (Application, error)
+	SaveApplication(context.Context, Application) error
+	SaveOffer(context.Context, Offer) error
+	Offer(context.Context, string) (Offer, error)
+	Exposure(context.Context, string, string) (Exposure, error)
+	AppendAudit(context.Context, Audit) error
+}
+type Service struct {
+	Store    Store
+	Products product.Service
+	Pricing  func(pricing.Policy, int64, int, time.Time) (pricing.Quote, error)
+	Clock    func() time.Time
+}
+
+func (s Service) now() time.Time {
+	if s.Clock != nil {
+		return s.Clock().UTC()
+	}
+	return time.Now().UTC()
+}
+func (s Service) Submit(ctx context.Context, a Application, actor string) (Application, error) {
+	p, err := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays)
+	if err != nil {
+		return Application{}, err
+	}
+	if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.RelationshipID) == "" || strings.TrimSpace(a.Purpose) == "" {
+		return Application{}, fmt.Errorf("application identity, relationship and purpose are required")
+	}
+	a.Status = "submitted"
+	a.ProductPolicyVersion = p.Version
+	a.SubmittedAt = s.now()
+	if err = s.Store.SaveApplication(ctx, a); err != nil {
+		return Application{}, err
+	}
+	return a, s.Store.AppendAudit(ctx, Audit{ApplicationID: a.ID, Actor: actor, Action: "submitted", Reason: "application submitted", At: s.now()})
+}
+
+// Decide makes no automatic lending decision. A reviewer must supply a non-empty reason.
+func (s Service) Decide(ctx context.Context, id, actor, decision, reason string, policy pricing.Policy) (Application, error) {
+	a, err := s.Store.Application(ctx, id)
+	if err != nil {
+		return Application{}, err
+	}
+	if a.Status != "submitted" || strings.TrimSpace(reason) == "" {
+		return Application{}, ErrInvalidState
+	}
+	switch decision {
+	case "decline":
+		a.Status = "declined"
+	case "offer":
+		if policy.ProductPolicyID != a.ProductPolicyID || policy.ProductPolicyVersion != a.ProductPolicyVersion {
+			return Application{}, fmt.Errorf("pricing policy does not match application product version")
+		}
+		q, e := s.Pricing(policy, a.Amount, a.TermDays, s.now())
+		if e != nil {
+			return Application{}, e
+		}
+		if q.Currency != a.Currency {
+			return Application{}, fmt.Errorf("quote currency does not match application")
+		}
+		a.Status = "offered"
+		if e = s.Store.SaveOffer(ctx, Offer{ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, ExpiresAt: q.ExpiresAt}); e != nil {
+			return Application{}, e
+		}
+	default:
+		return Application{}, fmt.Errorf("unsupported manual decision")
+	}
+	if err = s.Store.SaveApplication(ctx, a); err != nil {
+		return Application{}, err
+	}
+	return a, s.Store.AppendAudit(ctx, Audit{ApplicationID: a.ID, Actor: actor, Action: decision, Reason: reason, At: s.now()})
+}
+func (s Service) Accept(ctx context.Context, id, actor string) (Application, error) {
+	a, err := s.Store.Application(ctx, id)
+	if err != nil {
+		return Application{}, err
+	}
+	o, err := s.Store.Offer(ctx, id)
+	if err != nil {
+		return Application{}, err
+	}
+	if a.Status != "offered" || !o.ExpiresAt.After(s.now()) {
+		return Application{}, ErrInvalidState
+	}
+	a.Status = "accepted"
+	if err = s.Store.SaveApplication(ctx, a); err != nil {
+		return Application{}, err
+	}
+	return a, s.Store.AppendAudit(ctx, Audit{ApplicationID: a.ID, Actor: actor, Action: "accepted", Reason: "offer accepted", At: s.now()})
+}
