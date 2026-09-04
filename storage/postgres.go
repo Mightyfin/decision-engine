@@ -4,6 +4,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
@@ -15,6 +16,21 @@ import (
 )
 
 type Postgres struct{ Pool *pgxpool.Pool }
+
+func (s Postgres) CreateProductPolicy(ctx context.Context, p product.Policy) error {
+	_, err := s.Pool.Exec(ctx, `INSERT INTO product_policies(id,tenant_id,code,currency,version,minimum_amount,maximum_amount,minimum_term_days,maximum_term_days,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)`, p.ID, p.TenantID, p.Code, p.Currency, p.Version, p.MinimumAmount, p.MaximumAmount, p.MinimumTermDays, p.MaximumTermDays)
+	return err
+}
+
+func (s Postgres) CreatePricingPolicy(ctx context.Context, tenantID string, p pricing.Policy) error {
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE pricing_policies SET active=false WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true`, tenantID, p.ProductPolicyID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,origination_fee_bps,active) VALUES($1,$2,$3,$4,$5,$6,true)`, fmt.Sprintf("prc_%s_%d", p.ProductPolicyID, p.Version), tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.OriginationFeeBPS)
+		return err
+	})
+}
 
 func (s Postgres) CreateApplication(ctx context.Context, a creditrisk.Application, audit creditrisk.Audit) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
