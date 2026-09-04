@@ -56,7 +56,7 @@ func (v *OIDCVerifier) Authenticate(r *http.Request) (httpapi.Principal, error) 
 	}
 	for _, scope := range strings.Fields(c.Scope) {
 		switch scope {
-		case "decision:submit", "decision:read":
+		case "decision:submit", "decision:read", "credit:read", "credit:write":
 			roles["decision_workload"] = true
 		case "decision:review":
 			roles["credit_analyst"] = true
