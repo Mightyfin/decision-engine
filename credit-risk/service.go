@@ -37,6 +37,7 @@ type Audit struct {
 }
 type Store interface {
 	Application(context.Context, string) (Application, error)
+	ReviewQueue(context.Context, string, int) ([]Application, error)
 	SaveApplication(context.Context, Application) error
 	SaveOffer(context.Context, Offer) error
 	Offer(context.Context, string) (Offer, error)
@@ -64,7 +65,7 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 	if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.RelationshipID) == "" || strings.TrimSpace(a.Purpose) == "" {
 		return Application{}, fmt.Errorf("application identity, relationship and purpose are required")
 	}
-	a.Status = "submitted"
+	a.Status = "pending_review"
 	a.ProductPolicyVersion = p.Version
 	a.SubmittedAt = s.now()
 	if err = s.Store.SaveApplication(ctx, a); err != nil {
@@ -79,7 +80,7 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 	if err != nil {
 		return Application{}, err
 	}
-	if a.Status != "submitted" || strings.TrimSpace(reason) == "" {
+	if a.Status != "pending_review" || strings.TrimSpace(reason) == "" {
 		return Application{}, ErrInvalidState
 	}
 	switch decision {
