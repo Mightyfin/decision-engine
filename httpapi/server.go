@@ -37,6 +37,9 @@ type Server struct {
 
 func (s Server) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
+		write(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
 	m.HandleFunc("GET /v1/credit/applications/{id}", s.get)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)

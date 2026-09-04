@@ -1,0 +1,41 @@
+// Package migrations applies the Decision Engine schema in release order.
+package migrations
+
+import (
+	"context"
+	_ "embed"
+	"fmt"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+//go:embed 00001_decision_engine.sql
+var initial string
+
+func Up(ctx context.Context, pool *pgxpool.Pool) error {
+	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+		return err
+	}
+	const version = "00001_decision_engine"
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM decision_engine_schema_migrations WHERE version=$1)`, version).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	up, _, _ := strings.Cut(initial, "-- +goose Down")
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, up); err != nil {
+		return fmt.Errorf("apply %s: %w", version, err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO decision_engine_schema_migrations(version) VALUES($1)`, version); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
