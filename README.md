@@ -10,4 +10,4 @@ It is organised into three deliberately separate domains:
 
 It does **not** move money, post ledger entries, create repayment schedules, calculate penalties, or bypass provider/payment controls. Payment Rails, Wallet Ledger and LMS remain the owners of those responsibilities.
 
-The `intelligence/` area is an extension boundary for evidence processing and model support; it does not contain a live underwriting model in this milestone. The initial release is sandbox-only and manual-decision-first. A future automated score must be a separately versioned evaluator that records its inputs, policy version, decision and reason codes.
+The `intelligence/` area is documentation-only scaffolding for future evidence processing and model support; it contains no implemented underwriting model. The initial release is sandbox-only and manual-decision-first: every submitted credit case is reviewed by an authorised Credit Analyst. A future automated score must be a separately versioned evaluator that records its inputs, policy version, decision and reason codes.

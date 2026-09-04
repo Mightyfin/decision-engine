@@ -11,17 +11,15 @@ type Version struct {
 	EffectiveAt                time.Time
 }
 
-// CreditRouting is configuration authored and approved by credit governance. It directs an
-// algorithmic result to auto-offer, auto-decline, or analyst review. No score threshold belongs
-// in application code.
+// CreditRouting is configuration authored and approved by credit governance. The first release
+// routes every application to an analyst; automation is a future, separately approved policy.
 type CreditRouting struct {
-	PolicyID, TenantID string
-	Version            int
-	AutoOfferMinimum   float64
-	AutoDeclineMaximum float64
-	Active             bool
+	PolicyID, TenantID   string
+	Version              int
+	ManualReviewRequired bool
+	Active               bool
 }
 
 func (p CreditRouting) Valid() bool {
-	return p.Active && p.Version > 0 && p.PolicyID != "" && p.AutoDeclineMaximum < p.AutoOfferMinimum
+	return p.Active && p.Version > 0 && p.PolicyID != "" && p.ManualReviewRequired
 }
