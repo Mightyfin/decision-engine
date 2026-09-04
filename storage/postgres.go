@@ -10,10 +10,55 @@ import (
 	"github.com/Mightyfin/decision-engine/pricing"
 	"github.com/Mightyfin/decision-engine/product"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Postgres struct{ Pool *pgxpool.Pool }
+
+func (s Postgres) CreateApplication(ctx context.Context, a creditrisk.Application, audit creditrisk.Audit) error {
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		if err := saveApplication(ctx, tx, a); err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, audit)
+	})
+}
+
+func (s Postgres) RecordDecision(ctx context.Context, a creditrisk.Application, offer *creditrisk.Offer, audit creditrisk.Audit) error {
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		if offer != nil {
+			if err := saveOffer(ctx, tx, *offer); err != nil {
+				return err
+			}
+		}
+		if err := saveApplication(ctx, tx, a); err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, audit)
+	})
+}
+
+func (s Postgres) RecordAcceptance(ctx context.Context, a creditrisk.Application, audit creditrisk.Audit) error {
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		if err := saveApplication(ctx, tx, a); err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, audit)
+	})
+}
+
+func (s Postgres) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err = fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 
 func (s Postgres) Policy(ctx context.Context, tenantID, id string) (product.Policy, error) {
 	var p product.Policy
@@ -70,12 +115,10 @@ func (s Postgres) ReviewQueue(ctx context.Context, tenantID string, limit int) (
 	return items, rows.Err()
 }
 func (s Postgres) SaveApplication(ctx context.Context, a creditrisk.Application) error {
-	_, err := s.Pool.Exec(ctx, `INSERT INTO credit_applications(id,tenant_id,product_policy_id,relationship_id,amount,currency,term_days,purpose,product_policy_version,status,submitted_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status`, a.ID, a.TenantID, a.ProductPolicyID, a.RelationshipID, a.Amount, a.Currency, a.TermDays, a.Purpose, a.ProductPolicyVersion, a.Status, a.SubmittedAt)
-	return err
+	return saveApplication(ctx, s.Pool, a)
 }
 func (s Postgres) SaveOffer(ctx context.Context, o creditrisk.Offer) error {
-	_, err := s.Pool.Exec(ctx, `INSERT INTO credit_offers(application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, o.ApplicationID, o.QuoteID, o.ProductPolicyVersion, o.PricingPolicyVersion, o.Principal, o.Interest, o.Fees, o.Total, o.TermDays, o.ExpiresAt)
-	return err
+	return saveOffer(ctx, s.Pool, o)
 }
 func (s Postgres) Offer(ctx context.Context, id string) (creditrisk.Offer, error) {
 	var o creditrisk.Offer
@@ -89,9 +132,25 @@ func (s Postgres) Exposure(context.Context, string, string) (creditrisk.Exposure
 	return creditrisk.Exposure{}, nil
 }
 func (s Postgres) AppendAudit(ctx context.Context, a creditrisk.Audit) error {
+	return appendAudit(ctx, s.Pool, a)
+}
+
+type sqlExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func saveApplication(ctx context.Context, db sqlExecutor, a creditrisk.Application) error {
+	_, err := db.Exec(ctx, `INSERT INTO credit_applications(id,tenant_id,product_policy_id,relationship_id,amount,currency,term_days,purpose,product_policy_version,status,submitted_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status`, a.ID, a.TenantID, a.ProductPolicyID, a.RelationshipID, a.Amount, a.Currency, a.TermDays, a.Purpose, a.ProductPolicyVersion, a.Status, a.SubmittedAt)
+	return err
+}
+func saveOffer(ctx context.Context, db sqlExecutor, o creditrisk.Offer) error {
+	_, err := db.Exec(ctx, `INSERT INTO credit_offers(application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, o.ApplicationID, o.QuoteID, o.ProductPolicyVersion, o.PricingPolicyVersion, o.Principal, o.Interest, o.Fees, o.Total, o.TermDays, o.ExpiresAt)
+	return err
+}
+func appendAudit(ctx context.Context, db sqlExecutor, a creditrisk.Audit) error {
 	if a.At.IsZero() {
 		a.At = time.Now().UTC()
 	}
-	_, err := s.Pool.Exec(ctx, `INSERT INTO credit_decision_audit(application_id,actor,action,reason,created_at) VALUES($1,$2,$3,$4,$5)`, a.ApplicationID, a.Actor, a.Action, a.Reason, a.At)
+	_, err := db.Exec(ctx, `INSERT INTO credit_decision_audit(application_id,actor,action,reason,created_at) VALUES($1,$2,$3,$4,$5)`, a.ApplicationID, a.Actor, a.Action, a.Reason, a.At)
 	return err
 }

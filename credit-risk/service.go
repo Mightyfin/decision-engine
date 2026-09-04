@@ -44,6 +44,15 @@ type Store interface {
 	Exposure(context.Context, string, string) (Exposure, error)
 	AppendAudit(context.Context, Audit) error
 }
+
+// AtomicStore is implemented by durable adapters. It keeps the business state
+// and its corresponding audit record in one database transaction. The base
+// Store remains deliberately small so in-memory adapters stay useful in tests.
+type AtomicStore interface {
+	CreateApplication(context.Context, Application, Audit) error
+	RecordDecision(context.Context, Application, *Offer, Audit) error
+	RecordAcceptance(context.Context, Application, Audit) error
+}
 type Service struct {
 	Store    Store
 	Products product.Service
@@ -68,10 +77,14 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 	a.Status = "pending_review"
 	a.ProductPolicyVersion = p.Version
 	a.SubmittedAt = s.now()
+	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: "submitted", Reason: "application submitted", At: s.now()}
+	if store, ok := s.Store.(AtomicStore); ok {
+		return a, store.CreateApplication(ctx, a, audit)
+	}
 	if err = s.Store.SaveApplication(ctx, a); err != nil {
 		return Application{}, err
 	}
-	return a, s.Store.AppendAudit(ctx, Audit{ApplicationID: a.ID, Actor: actor, Action: "submitted", Reason: "application submitted", At: s.now()})
+	return a, s.Store.AppendAudit(ctx, audit)
 }
 
 // Decide makes no automatic lending decision. A reviewer must supply a non-empty reason.
@@ -83,6 +96,7 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 	if a.Status != "pending_review" || strings.TrimSpace(reason) == "" {
 		return Application{}, ErrInvalidState
 	}
+	var offer *Offer
 	switch decision {
 	case "decline":
 		a.Status = "declined"
@@ -98,16 +112,23 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 			return Application{}, fmt.Errorf("quote currency does not match application")
 		}
 		a.Status = "offered"
-		if e = s.Store.SaveOffer(ctx, Offer{ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, ExpiresAt: q.ExpiresAt}); e != nil {
-			return Application{}, e
-		}
+		offer = &Offer{ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, ExpiresAt: q.ExpiresAt}
 	default:
 		return Application{}, fmt.Errorf("unsupported manual decision")
+	}
+	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: decision, Reason: reason, At: s.now()}
+	if store, ok := s.Store.(AtomicStore); ok {
+		return a, store.RecordDecision(ctx, a, offer, audit)
+	}
+	if offer != nil {
+		if err = s.Store.SaveOffer(ctx, *offer); err != nil {
+			return Application{}, err
+		}
 	}
 	if err = s.Store.SaveApplication(ctx, a); err != nil {
 		return Application{}, err
 	}
-	return a, s.Store.AppendAudit(ctx, Audit{ApplicationID: a.ID, Actor: actor, Action: decision, Reason: reason, At: s.now()})
+	return a, s.Store.AppendAudit(ctx, audit)
 }
 func (s Service) Accept(ctx context.Context, id, actor string) (Application, error) {
 	a, err := s.Store.Application(ctx, id)
@@ -122,8 +143,12 @@ func (s Service) Accept(ctx context.Context, id, actor string) (Application, err
 		return Application{}, ErrInvalidState
 	}
 	a.Status = "accepted"
+	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: "accepted", Reason: "offer accepted", At: s.now()}
+	if store, ok := s.Store.(AtomicStore); ok {
+		return a, store.RecordAcceptance(ctx, a, audit)
+	}
 	if err = s.Store.SaveApplication(ctx, a); err != nil {
 		return Application{}, err
 	}
-	return a, s.Store.AppendAudit(ctx, Audit{ApplicationID: a.ID, Actor: actor, Action: "accepted", Reason: "offer accepted", At: s.now()})
+	return a, s.Store.AppendAudit(ctx, audit)
 }
