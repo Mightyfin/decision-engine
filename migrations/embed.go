@@ -16,6 +16,9 @@ var initial string
 //go:embed 00002_credit_outbox.sql
 var creditOutbox string
 
+//go:embed 00003_credit_outbox_delivery.sql
+var creditOutboxDelivery string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -23,7 +26,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00001_decision_engine", initial); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00002_credit_outbox", creditOutbox)
+	if err := apply(ctx, pool, "00002_credit_outbox", creditOutbox); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00003_credit_outbox_delivery", creditOutboxDelivery)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {
