@@ -13,11 +13,20 @@ import (
 //go:embed 00001_decision_engine.sql
 var initial string
 
+//go:embed 00002_credit_outbox.sql
+var creditOutbox string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
-	const version = "00001_decision_engine"
+	if err := apply(ctx, pool, "00001_decision_engine", initial); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00002_credit_outbox", creditOutbox)
+}
+
+func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM decision_engine_schema_migrations WHERE version=$1)`, version).Scan(&exists); err != nil {
 		return err
@@ -25,7 +34,7 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if exists {
 		return nil
 	}
-	up, _, _ := strings.Cut(initial, "-- +goose Down")
+	up, _, _ := strings.Cut(source, "-- +goose Down")
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
