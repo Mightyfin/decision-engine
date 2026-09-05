@@ -50,8 +50,8 @@ SET publishing_at = now(), publish_attempts = publish_attempts + 1
 FROM candidate
 WHERE outbox.id = candidate.id
 RETURNING outbox.id, outbox.event_type, outbox.aggregate_id, outbox.tenant_id,
-          outbox.payload, outbox.occurred_at`, claimLease.String()).Scan(
-		claimLease.Milliseconds(), &event.ID, &event.Type, &event.AggregateID, &event.TenantID, &event.Payload, &event.OccurredAt,
+	          outbox.payload, outbox.occurred_at`, claimLease.Milliseconds()).Scan(
+		&event.ID, &event.Type, &event.AggregateID, &event.TenantID, &event.Payload, &event.OccurredAt,
 	)
 	if err == pgx.ErrNoRows {
 		if commitErr := tx.Commit(ctx); commitErr != nil {
