@@ -6,7 +6,10 @@ The Decision Engine exposes two authenticated interfaces. EFaaS is the tenant-fa
 |---|---|---|
 | EFaaS workload | `POST /v1/credit/applications` | creates `pending_review` |
 | EFaaS workload | `GET /v1/credit/applications/{id}` | tenant-scoped case status / offer outcome |
+| EFaaS workload | `POST /v1/credit/applications/{id}/accept` | records acceptance of an unexpired offer |
 | Credit Analyst | `GET /v1/internal/tenants/{tenant_id}/credit/review-queue` | analyst work queue |
 | Credit Analyst | `POST /v1/internal/credit/applications/{id}/decision` | records `offer` or `decline` with mandatory reason |
 
 The decision endpoint loads the active product and pricing policy server-side. It requires a Credit Analyst role and records an immutable audit row. It never disburses, reserves cash, posts a ledger entry, or creates an LMS loan.
+
+Acceptance is the final Decision Engine lifecycle step. A downstream lending or wallet system must perform its own separate funding, disbursement, accounting and loan-lifecycle controls before any money moves.

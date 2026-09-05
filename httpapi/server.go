@@ -48,6 +48,7 @@ func (s Server) Handler() http.Handler {
 	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
 	m.HandleFunc("GET /v1/credit/applications/{id}", s.get)
+	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
 	m.HandleFunc("POST /v1/internal/credit/applications/{id}/decision", s.decide)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/product-policies", s.createProductPolicy)
@@ -155,6 +156,26 @@ func (s Server) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, a)
+}
+
+// accept records a tenant's acceptance of an existing offer. It does not
+// reserve money, disburse, create an LMS loan, or post to a ledger.
+func (s Server) accept(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.principal(w, r, "decision_workload")
+	if !ok {
+		return
+	}
+	a, err := s.Applications.Application(r.Context(), r.PathValue("id"))
+	if err != nil || a.TenantID != p.TenantID {
+		write(w, 404, map[string]string{"error": "not_found"})
+		return
+	}
+	a, err = s.Credit.Accept(r.Context(), a.ID, p.Subject)
+	if err != nil {
+		write(w, 422, map[string]string{"error": "acceptance_rejected"})
+		return
+	}
+	write(w, http.StatusOK, a)
 }
 
 func (s Server) queue(w http.ResponseWriter, r *http.Request) {
