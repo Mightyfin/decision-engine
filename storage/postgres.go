@@ -3,6 +3,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -61,6 +62,22 @@ func (s Postgres) RecordAcceptance(ctx context.Context, a creditrisk.Application
 			return err
 		}
 		return appendAudit(ctx, tx, audit)
+	})
+}
+func (s Postgres) RecordAcceptanceWithEvent(ctx context.Context, a creditrisk.Application, audit creditrisk.Audit, offer creditrisk.Offer) error {
+	return s.withTx(ctx, func(tx pgx.Tx) error {
+		if err := saveApplication(ctx, tx, a); err != nil {
+			return err
+		}
+		if err := appendAudit(ctx, tx, audit); err != nil {
+			return err
+		}
+		payload, err := json.Marshal(map[string]any{"application_id": a.ID, "tenant_id": a.TenantID, "offer_quote_id": offer.QuoteID, "currency": a.Currency, "total_minor": offer.Total})
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO credit_outbox(event_type,aggregate_id,tenant_id,payload,occurred_at) VALUES('credit.offer.accepted',$1,$2,$3,$4)`, a.ID, a.TenantID, payload, audit.At)
+		return err
 	})
 }
 

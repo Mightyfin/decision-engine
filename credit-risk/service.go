@@ -53,6 +53,9 @@ type AtomicStore interface {
 	RecordDecision(context.Context, Application, *Offer, Audit) error
 	RecordAcceptance(context.Context, Application, Audit) error
 }
+type AcceptanceEventStore interface {
+	RecordAcceptanceWithEvent(context.Context, Application, Audit, Offer) error
+}
 type Service struct {
 	Store    Store
 	Products product.Service
@@ -144,6 +147,9 @@ func (s Service) Accept(ctx context.Context, id, actor string) (Application, err
 	}
 	a.Status = "accepted"
 	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: "accepted", Reason: "offer accepted", At: s.now()}
+	if store, ok := s.Store.(AcceptanceEventStore); ok {
+		return a, store.RecordAcceptanceWithEvent(ctx, a, audit, o)
+	}
 	if store, ok := s.Store.(AtomicStore); ok {
 		return a, store.RecordAcceptance(ctx, a, audit)
 	}
