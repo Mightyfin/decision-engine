@@ -132,6 +132,10 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ProductPolicyID string `json:"product_policy_id"`
 		RelationshipID  string `json:"relationship_id"`
+		PartyID         string `json:"party_id"`
+		ApplicantRole   string `json:"applicant_role"`
+		WalletID        string `json:"wallet_id"`
+		Origin          string `json:"origin"`
 		Currency        string `json:"currency"`
 		Purpose         string `json:"purpose"`
 		Amount          int64  `json:"amount_minor"`
@@ -141,7 +145,7 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	a, err := s.Credit.Submit(r.Context(), creditrisk.Application{ID: newID("cap"), TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
+	a, err := s.Credit.Submit(r.Context(), creditrisk.Application{ID: newID("cap"), TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "validation_failed"})
 		return

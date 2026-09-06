@@ -17,11 +17,11 @@ var (
 )
 
 type Application struct {
-	ID, TenantID, ProductPolicyID, RelationshipID, Currency, Purpose, Status string
-	Amount                                                                   int64
-	TermDays                                                                 int
-	ProductPolicyVersion                                                     int
-	SubmittedAt                                                              time.Time
+	ID, TenantID, ProductPolicyID, RelationshipID, PartyID, ApplicantRole, WalletID, Origin, Currency, Purpose, Status string
+	Amount                                                                                                             int64
+	TermDays                                                                                                           int
+	ProductPolicyVersion                                                                                               int
+	SubmittedAt                                                                                                        time.Time
 }
 type Offer struct {
 	ApplicationID, QuoteID                     string
@@ -76,6 +76,15 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 	}
 	if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.RelationshipID) == "" || strings.TrimSpace(a.Purpose) == "" {
 		return Application{}, fmt.Errorf("application identity, relationship and purpose are required")
+	}
+	if a.ApplicantRole != "" && a.ApplicantRole != "network_participant" && a.ApplicantRole != "partner_organisation" {
+		return Application{}, fmt.Errorf("unsupported applicant role")
+	}
+	if a.PartyID != "" && a.ApplicantRole == "" {
+		return Application{}, fmt.Errorf("party identity requires an applicant role")
+	}
+	if a.Origin != "" && a.Origin != "direct_lending" && a.Origin != "embedded_finance" && a.Origin != "efaas" {
+		return Application{}, fmt.Errorf("unsupported credit origin")
 	}
 	a.Status = "pending_review"
 	a.ProductPolicyVersion = p.Version
