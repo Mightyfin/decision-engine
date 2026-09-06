@@ -57,11 +57,11 @@ func (s Server) Handler() http.Handler {
 }
 
 func (s Server) createProductPolicy(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.principal(w, r, "credit_policy_admin")
+	_, ok := s.principal(w, r, "credit_policy_admin")
 	if !ok {
 		return
 	}
-	if p.TenantID != r.PathValue("tenant_id") || s.Policies == nil {
+	if s.Policies == nil {
 		write(w, 403, map[string]string{"error": "forbidden"})
 		return
 	}
@@ -78,7 +78,8 @@ func (s Server) createProductPolicy(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	policy := product.Policy{ID: newID("prd"), TenantID: p.TenantID, Code: strings.TrimSpace(in.Code), Currency: strings.ToUpper(in.Currency), Version: in.Version, MinimumAmount: in.MinimumAmount, MaximumAmount: in.MaximumAmount, MinimumTermDays: in.MinimumTerm, MaximumTermDays: in.MaximumTerm, Active: true}
+	tenantID := r.PathValue("tenant_id")
+	policy := product.Policy{ID: newID("prd"), TenantID: tenantID, Code: strings.TrimSpace(in.Code), Currency: strings.ToUpper(in.Currency), Version: in.Version, MinimumAmount: in.MinimumAmount, MaximumAmount: in.MaximumAmount, MinimumTermDays: in.MinimumTerm, MaximumTermDays: in.MaximumTerm, Active: true}
 	if err := s.Policies.CreateProductPolicy(r.Context(), policy); err != nil {
 		write(w, 422, map[string]string{"error": "policy_rejected"})
 		return
@@ -87,11 +88,11 @@ func (s Server) createProductPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.principal(w, r, "credit_policy_admin")
+	_, ok := s.principal(w, r, "credit_policy_admin")
 	if !ok {
 		return
 	}
-	if p.TenantID != r.PathValue("tenant_id") || s.Policies == nil {
+	if s.Policies == nil {
 		write(w, 403, map[string]string{"error": "forbidden"})
 		return
 	}
@@ -105,7 +106,7 @@ func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	if err := s.Policies.CreatePricingPolicy(r.Context(), p.TenantID, pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, OriginationFeeBPS: in.OriginationFeeBPS, Active: true}); err != nil {
+	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, OriginationFeeBPS: in.OriginationFeeBPS, Active: true}); err != nil {
 		write(w, 422, map[string]string{"error": "policy_rejected"})
 		return
 	}
@@ -113,7 +114,7 @@ func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
 }
 func (s Server) principal(w http.ResponseWriter, r *http.Request, role string) (Principal, bool) {
 	p, err := s.Auth.Authenticate(r)
-	if err != nil || p.TenantID == "" || !p.Roles[role] {
+	if err != nil || !p.Roles[role] {
 		write(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return p, false
 	}
@@ -122,7 +123,10 @@ func (s Server) principal(w http.ResponseWriter, r *http.Request, role string) (
 
 func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.principal(w, r, "decision_workload")
-	if !ok {
+	if !ok || p.TenantID == "" {
+		if ok {
+			write(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		}
 		return
 	}
 	var in struct {
@@ -179,15 +183,11 @@ func (s Server) accept(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s Server) queue(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.principal(w, r, "credit_analyst")
+	_, ok := s.principal(w, r, "credit_analyst")
 	if !ok {
 		return
 	}
 	tenant := r.PathValue("tenant_id")
-	if tenant != p.TenantID {
-		write(w, 403, map[string]string{"error": "forbidden"})
-		return
-	}
 	queue, err := s.Applications.ReviewQueue(r.Context(), tenant, 50)
 	if err != nil {
 		write(w, 500, map[string]string{"error": "internal_error"})
@@ -202,7 +202,7 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, err := s.Applications.Application(r.Context(), r.PathValue("id"))
-	if err != nil || a.TenantID != p.TenantID {
+	if err != nil {
 		write(w, 404, map[string]string{"error": "not_found"})
 		return
 	}
@@ -214,7 +214,7 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	policy, err := s.Pricing.PricingPolicy(r.Context(), p.TenantID, a.ProductPolicyID)
+	policy, err := s.Pricing.PricingPolicy(r.Context(), a.TenantID, a.ProductPolicyID)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "pricing_policy_unavailable"})
 		return

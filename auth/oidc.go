@@ -47,7 +47,7 @@ func (v *OIDCVerifier) Authenticate(r *http.Request) (httpapi.Principal, error) 
 		return httpapi.Principal{}, ErrInvalidToken
 	}
 	var c claims
-	if token.Claims(&c) != nil || c.Subject == "" || c.TenantID == "" || c.Environment != v.environment {
+	if token.Claims(&c) != nil || c.Subject == "" || c.Environment != v.environment {
 		return httpapi.Principal{}, ErrInvalidToken
 	}
 	roles := map[string]bool{}

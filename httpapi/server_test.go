@@ -103,3 +103,19 @@ func TestAnalystRoleIsRequiredForDecision(t *testing.T) {
 		t.Fatalf("got %d", response.Code)
 	}
 }
+
+func TestStaffAnalystCanReviewAnotherTenantQueue(t *testing.T) {
+	store := &testStore{applications: map[string]creditrisk.Application{
+		"cap_1": {ID: "cap_1", TenantID: "tenant_2", Status: "pending_review"},
+	}, offers: map[string]creditrisk.Offer{}}
+	server := Server{Auth: testAuth{Principal{Subject: "analyst", Roles: map[string]bool{"credit_analyst": true}}}, Applications: store}
+	req := httptest.NewRequest(http.MethodGet, "/v1/internal/tenants/tenant_2/credit/review-queue", nil)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("got status %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "cap_1") {
+		t.Fatalf("expected tenant queue item, got %s", response.Body.String())
+	}
+}
