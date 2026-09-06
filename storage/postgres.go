@@ -72,7 +72,29 @@ func (s Postgres) RecordAcceptanceWithEvent(ctx context.Context, a creditrisk.Ap
 		if err := appendAudit(ctx, tx, audit); err != nil {
 			return err
 		}
-		payload, err := json.Marshal(map[string]any{"application_id": a.ID, "tenant_id": a.TenantID, "offer_quote_id": offer.QuoteID, "currency": a.Currency, "total_minor": offer.Total})
+		// This is a handoff fact, not a disbursement instruction.  Consumers may
+		// create an operational funding case, but must apply their own controls
+		// before reserving funds, posting to a ledger, or creating a loan.
+		payload, err := json.Marshal(map[string]any{
+			"application_id":         a.ID,
+			"tenant_id":              a.TenantID,
+			"offer_quote_id":         offer.QuoteID,
+			"relationship_id":        a.RelationshipID,
+			"party_id":               a.PartyID,
+			"applicant_role":         a.ApplicantRole,
+			"wallet_id":              a.WalletID,
+			"origin":                 a.Origin,
+			"product_policy_id":      a.ProductPolicyID,
+			"product_policy_version": offer.ProductPolicyVersion,
+			"pricing_policy_version": offer.PricingPolicyVersion,
+			"currency":               a.Currency,
+			"principal_minor":        offer.Principal,
+			"interest_minor":         offer.Interest,
+			"fees_minor":             offer.Fees,
+			"total_minor":            offer.Total,
+			"term_days":              offer.TermDays,
+			"offer_expires_at":       offer.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		})
 		if err != nil {
 			return err
 		}
