@@ -28,6 +28,10 @@ type Offer struct {
 	ProductPolicyVersion, PricingPolicyVersion int
 	Principal, Interest, Fees, Total           int64
 	TermDays                                   int
+	InstallmentCount, RepaymentIntervalDays    int
+	GraceDays, PenaltyRateBPS, PenaltyCapBPS   int
+	PenaltyBasis                               string
+	AllocationOrder                            []string
 	ExpiresAt                                  time.Time
 }
 type Exposure struct{ ApprovedLimit, Reserved, Utilised int64 }
@@ -59,7 +63,7 @@ type AcceptanceEventStore interface {
 type Service struct {
 	Store    Store
 	Products product.Service
-	Pricing  func(pricing.Policy, int64, int, time.Time) (pricing.Quote, error)
+	Pricing  func(pricing.Policy, pricing.ScheduleTerms, int64, int, time.Time) (pricing.Quote, error)
 	Clock    func() time.Time
 }
 
@@ -116,7 +120,11 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 		if policy.ProductPolicyID != a.ProductPolicyID || policy.ProductPolicyVersion != a.ProductPolicyVersion {
 			return Application{}, fmt.Errorf("pricing policy does not match application product version")
 		}
-		q, e := s.Pricing(policy, a.Amount, a.TermDays, s.now())
+		productPolicy, e := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays)
+		if e != nil {
+			return Application{}, e
+		}
+		q, e := s.Pricing(policy, pricing.ScheduleTerms{RepaymentIntervalDays: productPolicy.RepaymentIntervalDays, GraceDays: productPolicy.GraceDays, AllocationOrder: productPolicy.AllocationOrder}, a.Amount, a.TermDays, s.now())
 		if e != nil {
 			return Application{}, e
 		}
@@ -124,7 +132,7 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 			return Application{}, fmt.Errorf("quote currency does not match application")
 		}
 		a.Status = "offered"
-		offer = &Offer{ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, ExpiresAt: q.ExpiresAt}
+		offer = &Offer{ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, InstallmentCount: q.InstallmentCount, RepaymentIntervalDays: q.RepaymentIntervalDays, GraceDays: q.GraceDays, PenaltyRateBPS: q.PenaltyRateBPS, PenaltyCapBPS: q.PenaltyCapBPS, PenaltyBasis: q.PenaltyBasis, AllocationOrder: q.AllocationOrder, ExpiresAt: q.ExpiresAt}
 	default:
 		return Application{}, fmt.Errorf("unsupported manual decision")
 	}

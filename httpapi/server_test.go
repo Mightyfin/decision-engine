@@ -76,7 +76,7 @@ func (p testPricing) PricingPolicy(context.Context, string, string) (pricing.Pol
 
 func TestSubmitRequiresWorkloadRoleAndUsesMinorUnits(t *testing.T) {
 	store := &testStore{applications: map[string]creditrisk.Application{}, offers: map[string]creditrisk.Offer{}}
-	policy := product.Policy{ID: "product_1", TenantID: "tenant_1", Currency: "ZMW", Version: 1, Active: true, MinimumAmount: 100, MaximumAmount: 10_000, MinimumTermDays: 7, MaximumTermDays: 90}
+	policy := product.Policy{ID: "product_1", TenantID: "tenant_1", Currency: "ZMW", Version: 1, Active: true, MinimumAmount: 100, MaximumAmount: 10_000, MinimumTermDays: 7, MaximumTermDays: 90, RepaymentIntervalDays: 30, GraceDays: 3, AllocationOrder: []string{"penalty", "fees", "interest", "principal"}}
 	service := creditrisk.Service{Store: store, Products: product.Service{Store: testProducts{policy: policy}}, Pricing: pricing.QuoteFor, Clock: func() time.Time { return time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC) }}
 	server := Server{Auth: testAuth{Principal{Subject: "workload", TenantID: "tenant_1", Roles: map[string]bool{"decision_workload": true}}}, Credit: service, Applications: store, Pricing: testPricing{}}
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/applications", strings.NewReader(`{"product_policy_id":"product_1","relationship_id":"customer_1","currency":"ZMW","purpose":"inventory","amount_minor":1000,"term_days":30}`))

@@ -66,20 +66,23 @@ func (s Server) createProductPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Code          string `json:"code"`
-		Currency      string `json:"currency"`
-		Version       int    `json:"version"`
-		MinimumAmount int64  `json:"minimum_amount_minor"`
-		MaximumAmount int64  `json:"maximum_amount_minor"`
-		MinimumTerm   int    `json:"minimum_term_days"`
-		MaximumTerm   int    `json:"maximum_term_days"`
+		Code                  string   `json:"code"`
+		Currency              string   `json:"currency"`
+		Version               int      `json:"version"`
+		MinimumAmount         int64    `json:"minimum_amount_minor"`
+		MaximumAmount         int64    `json:"maximum_amount_minor"`
+		MinimumTerm           int      `json:"minimum_term_days"`
+		MaximumTerm           int      `json:"maximum_term_days"`
+		RepaymentIntervalDays int      `json:"repayment_interval_days"`
+		GraceDays             int      `json:"grace_days"`
+		AllocationOrder       []string `json:"allocation_order"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Code) == "" || len(in.Currency) != 3 || in.Version < 1 || in.MinimumAmount < 1 || in.MaximumAmount < in.MinimumAmount || in.MinimumTerm < 1 || in.MaximumTerm < in.MinimumTerm {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Code) == "" || len(in.Currency) != 3 || in.Version < 1 || in.MinimumAmount < 1 || in.MaximumAmount < in.MinimumAmount || in.MinimumTerm < 1 || in.MaximumTerm < in.MinimumTerm || in.RepaymentIntervalDays < 1 || in.GraceDays < 0 || !product.ValidAllocationOrder(in.AllocationOrder) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
 	tenantID := r.PathValue("tenant_id")
-	policy := product.Policy{ID: newID("prd"), TenantID: tenantID, Code: strings.TrimSpace(in.Code), Currency: strings.ToUpper(in.Currency), Version: in.Version, MinimumAmount: in.MinimumAmount, MaximumAmount: in.MaximumAmount, MinimumTermDays: in.MinimumTerm, MaximumTermDays: in.MaximumTerm, Active: true}
+	policy := product.Policy{ID: newID("prd"), TenantID: tenantID, Code: strings.TrimSpace(in.Code), Currency: strings.ToUpper(in.Currency), Version: in.Version, MinimumAmount: in.MinimumAmount, MaximumAmount: in.MaximumAmount, MinimumTermDays: in.MinimumTerm, MaximumTermDays: in.MaximumTerm, RepaymentIntervalDays: in.RepaymentIntervalDays, GraceDays: in.GraceDays, AllocationOrder: in.AllocationOrder, Active: true}
 	if err := s.Policies.CreateProductPolicy(r.Context(), policy); err != nil {
 		write(w, 422, map[string]string{"error": "policy_rejected"})
 		return
@@ -101,12 +104,15 @@ func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
 		Version           int    `json:"version"`
 		AnnualRateBPS     int    `json:"annual_rate_bps"`
 		OriginationFeeBPS int    `json:"origination_fee_bps"`
+		PenaltyRateBPS    int    `json:"penalty_rate_bps"`
+		PenaltyBasis      string `json:"penalty_basis"`
+		PenaltyCapBPS     int    `json:"penalty_cap_bps"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.ProductPolicyID) == "" || in.Version < 1 || in.AnnualRateBPS < 0 || in.OriginationFeeBPS < 0 {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.ProductPolicyID) == "" || in.Version < 1 || in.AnnualRateBPS < 0 || in.OriginationFeeBPS < 0 || in.PenaltyRateBPS < 0 || in.PenaltyCapBPS < 0 || strings.TrimSpace(in.PenaltyBasis) == "" {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, OriginationFeeBPS: in.OriginationFeeBPS, Active: true}); err != nil {
+	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, OriginationFeeBPS: in.OriginationFeeBPS, PenaltyRateBPS: in.PenaltyRateBPS, PenaltyBasis: in.PenaltyBasis, PenaltyCapBPS: in.PenaltyCapBPS, Active: true}); err != nil {
 		write(w, 422, map[string]string{"error": "policy_rejected"})
 		return
 	}

@@ -15,6 +15,8 @@ type Policy struct {
 	Version                          int
 	MinimumAmount, MaximumAmount     int64 // minor units
 	MinimumTermDays, MaximumTermDays int
+	RepaymentIntervalDays, GraceDays int
+	AllocationOrder                  []string
 	Active                           bool
 }
 
@@ -28,8 +30,22 @@ func (s Service) Validate(ctx context.Context, tenantID, policyID, currency stri
 	if err != nil {
 		return Policy{}, err
 	}
-	if !p.Active || p.Version < 1 || strings.TrimSpace(currency) != p.Currency || amount < p.MinimumAmount || amount > p.MaximumAmount || termDays < p.MinimumTermDays || termDays > p.MaximumTermDays {
+	if !p.Active || p.Version < 1 || strings.TrimSpace(currency) != p.Currency || amount < p.MinimumAmount || amount > p.MaximumAmount || termDays < p.MinimumTermDays || termDays > p.MaximumTermDays || p.RepaymentIntervalDays < 1 || p.GraceDays < 0 || !ValidAllocationOrder(p.AllocationOrder) {
 		return Policy{}, fmt.Errorf("request does not meet configured product policy")
 	}
 	return p, nil
+}
+
+func ValidAllocationOrder(order []string) bool {
+	if len(order) != 4 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, component := range order {
+		if component != "principal" && component != "interest" && component != "fees" && component != "penalty" || seen[component] {
+			return false
+		}
+		seen[component] = true
+	}
+	return true
 }
