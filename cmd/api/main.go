@@ -26,9 +26,9 @@ func main() {
 		return
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	databaseURL, issuer, audience, environment := os.Getenv("DECISION_ENGINE_DATABASE_URL"), os.Getenv("DECISION_ENGINE_OIDC_ISSUER"), os.Getenv("DECISION_ENGINE_OIDC_AUDIENCE"), os.Getenv("DECISION_ENGINE_ENVIRONMENT")
-	if databaseURL == "" || issuer == "" || audience == "" || environment == "" {
-		log.Error("configuration rejected: database URL and OIDC settings are required")
+	databaseURL, issuer, audience, environment, productURL := os.Getenv("DECISION_ENGINE_DATABASE_URL"), os.Getenv("DECISION_ENGINE_OIDC_ISSUER"), os.Getenv("DECISION_ENGINE_OIDC_AUDIENCE"), os.Getenv("DECISION_ENGINE_ENVIRONMENT"), os.Getenv("DECISION_ENGINE_PRODUCT_ENGINE_BASE_URL")
+	if databaseURL == "" || issuer == "" || audience == "" || environment == "" || productURL == "" {
+		log.Error("configuration rejected: database URL, OIDC, and Product Engine settings are required")
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -49,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 	store := storage.Postgres{Pool: pool}
-	credit := creditrisk.Service{Store: store, Products: product.Service{Store: store}, Pricing: pricing.QuoteFor}
+	credit := creditrisk.Service{Store: store, Products: product.Service{Store: product.HTTPStore{BaseURL: productURL}}, Pricing: pricing.QuoteFor}
 	server := &http.Server{Addr: address(), Handler: httpapi.Server{Auth: verifier, Credit: credit, Applications: store, Pricing: store, Policies: store}.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -24,6 +24,8 @@ type Application struct {
 	Amount                                                                                                             int64
 	TermDays                                                                                                           int
 	ProductPolicyVersion                                                                                               int
+	RepaymentIntervalDays, GraceDays                                                                                   int
+	AllocationOrder                                                                                                    []string
 	SubmittedAt                                                                                                        time.Time
 }
 type Offer struct {
@@ -77,7 +79,7 @@ func (s Service) now() time.Time {
 	return time.Now().UTC()
 }
 func (s Service) Submit(ctx context.Context, a Application, actor string) (Application, error) {
-	p, err := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays)
+	p, err := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays, a.ApplicantRole)
 	if err != nil {
 		return Application{}, err
 	}
@@ -98,6 +100,9 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 	}
 	a.Status = "pending_review"
 	a.ProductPolicyVersion = p.Version
+	a.RepaymentIntervalDays = p.RepaymentIntervalDays
+	a.GraceDays = p.GraceDays
+	a.AllocationOrder = append([]string(nil), p.AllocationOrder...)
 	a.SubmittedAt = s.now()
 	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: "submitted", Reason: "application submitted", At: s.now()}
 	if store, ok := s.Store.(AtomicStore); ok {
@@ -126,11 +131,7 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 		if policy.ProductPolicyID != a.ProductPolicyID || policy.ProductPolicyVersion != a.ProductPolicyVersion {
 			return Application{}, fmt.Errorf("pricing policy does not match application product version")
 		}
-		productPolicy, e := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays)
-		if e != nil {
-			return Application{}, e
-		}
-		q, e := s.Pricing(policy, pricing.ScheduleTerms{RepaymentIntervalDays: productPolicy.RepaymentIntervalDays, GraceDays: productPolicy.GraceDays, AllocationOrder: productPolicy.AllocationOrder}, a.Amount, a.TermDays, s.now())
+		q, e := s.Pricing(policy, pricing.ScheduleTerms{RepaymentIntervalDays: a.RepaymentIntervalDays, GraceDays: a.GraceDays, AllocationOrder: a.AllocationOrder}, a.Amount, a.TermDays, s.now())
 		if e != nil {
 			return Application{}, e
 		}

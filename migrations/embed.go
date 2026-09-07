@@ -25,6 +25,12 @@ var creditApplicantSubject string
 //go:embed 00005_servicing_terms.sql
 var servicingTerms string
 
+//go:embed 00006_dynamic_origin_tags.sql
+var dynamicOriginTags string
+
+//go:embed 00007_external_product_authority.sql
+var externalProductAuthority string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -41,7 +47,13 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00004_credit_applicant_subject", creditApplicantSubject); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00005_servicing_terms", servicingTerms)
+	if err := apply(ctx, pool, "00005_servicing_terms", servicingTerms); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00006_dynamic_origin_tags", dynamicOriginTags); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00007_external_product_authority", externalProductAuthority)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

@@ -30,7 +30,6 @@ type applicationStore interface {
 	ReviewQueue(context.Context, string, int) ([]creditrisk.Application, error)
 }
 type policyStore interface {
-	CreateProductPolicy(context.Context, product.Policy) error
 	CreatePricingPolicy(context.Context, string, pricing.Policy) error
 }
 type Server struct {
@@ -51,43 +50,8 @@ func (s Server) Handler() http.Handler {
 	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
 	m.HandleFunc("POST /v1/internal/credit/applications/{id}/decision", s.decide)
-	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/product-policies", s.createProductPolicy)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/pricing-policies", s.createPricingPolicy)
 	return m
-}
-
-func (s Server) createProductPolicy(w http.ResponseWriter, r *http.Request) {
-	_, ok := s.principal(w, r, "credit_policy_admin")
-	if !ok {
-		return
-	}
-	if s.Policies == nil {
-		write(w, 403, map[string]string{"error": "forbidden"})
-		return
-	}
-	var in struct {
-		Code                  string   `json:"code"`
-		Currency              string   `json:"currency"`
-		Version               int      `json:"version"`
-		MinimumAmount         int64    `json:"minimum_amount_minor"`
-		MaximumAmount         int64    `json:"maximum_amount_minor"`
-		MinimumTerm           int      `json:"minimum_term_days"`
-		MaximumTerm           int      `json:"maximum_term_days"`
-		RepaymentIntervalDays int      `json:"repayment_interval_days"`
-		GraceDays             int      `json:"grace_days"`
-		AllocationOrder       []string `json:"allocation_order"`
-	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Code) == "" || len(in.Currency) != 3 || in.Version < 1 || in.MinimumAmount < 1 || in.MaximumAmount < in.MinimumAmount || in.MinimumTerm < 1 || in.MaximumTerm < in.MinimumTerm || in.RepaymentIntervalDays < 1 || in.GraceDays < 0 || !product.ValidAllocationOrder(in.AllocationOrder) {
-		write(w, 400, map[string]string{"error": "invalid_request"})
-		return
-	}
-	tenantID := r.PathValue("tenant_id")
-	policy := product.Policy{ID: newID("prd"), TenantID: tenantID, Code: strings.TrimSpace(in.Code), Currency: strings.ToUpper(in.Currency), Version: in.Version, MinimumAmount: in.MinimumAmount, MaximumAmount: in.MaximumAmount, MinimumTermDays: in.MinimumTerm, MaximumTermDays: in.MaximumTerm, RepaymentIntervalDays: in.RepaymentIntervalDays, GraceDays: in.GraceDays, AllocationOrder: in.AllocationOrder, Active: true}
-	if err := s.Policies.CreateProductPolicy(r.Context(), policy); err != nil {
-		write(w, 422, map[string]string{"error": "policy_rejected"})
-		return
-	}
-	write(w, 201, policy)
 }
 
 func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +115,8 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	a, err := s.Credit.Submit(r.Context(), creditrisk.Application{ID: newID("cap"), TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
+	ctx := product.WithBearerToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	a, err := s.Credit.Submit(ctx, creditrisk.Application{ID: newID("cap"), TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "validation_failed"})
 		return
@@ -229,6 +194,8 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 		write(w, 422, map[string]string{"error": "pricing_policy_unavailable"})
 		return
 	}
+	policy.ProductPolicyVersion = a.ProductPolicyVersion
+	policy.Currency = a.Currency
 	a, err = s.Credit.Decide(r.Context(), a.ID, p.Subject, in.Decision, in.Reason, policy)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "decision_rejected"})
