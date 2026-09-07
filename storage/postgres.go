@@ -22,7 +22,7 @@ func (s Postgres) CreatePricingPolicy(ctx context.Context, tenantID string, p pr
 		if _, err := tx.Exec(ctx, `UPDATE pricing_policies SET active=false WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true`, tenantID, p.ProductPolicyID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)`, fmt.Sprintf("prc_%s_%d", p.ProductPolicyID, p.Version), tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.OriginationFeeBPS, p.PenaltyRateBPS, p.PenaltyBasis, p.PenaltyCapBPS)
+		_, err := tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true)`, fmt.Sprintf("prc_%s_%d", p.ProductPolicyID, p.Version), tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.InterestMethod, p.RatePeriod, p.InterestRateBPS, p.FixedInterest, p.OriginationFeeBPS, p.PenaltyRateBPS, p.PenaltyBasis, p.PenaltyCapBPS)
 		return err
 	})
 }
@@ -120,7 +120,7 @@ func (s Postgres) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
 // an EFaaS tenant request or a browser form.
 func (s Postgres) PricingPolicy(ctx context.Context, tenantID, productPolicyID string) (pricing.Policy, error) {
 	var p pricing.Policy
-	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,active FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true ORDER BY version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.ProductPolicyID, &p.Version, &p.AnnualRateBPS, &p.OriginationFeeBPS, &p.PenaltyRateBPS, &p.PenaltyBasis, &p.PenaltyCapBPS, &p.Active)
+	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,active FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true ORDER BY version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.ProductPolicyID, &p.Version, &p.AnnualRateBPS, &p.InterestMethod, &p.RatePeriod, &p.InterestRateBPS, &p.FixedInterest, &p.OriginationFeeBPS, &p.PenaltyRateBPS, &p.PenaltyBasis, &p.PenaltyCapBPS, &p.Active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, creditrisk.ErrNotFound
 	}

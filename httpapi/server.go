@@ -67,16 +67,33 @@ func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
 		ProductPolicyID   string `json:"product_policy_id"`
 		Version           int    `json:"version"`
 		AnnualRateBPS     int    `json:"annual_rate_bps"`
+		InterestMethod    string `json:"interest_method"`
+		RatePeriod        string `json:"rate_period"`
+		InterestRateBPS   int    `json:"interest_rate_bps"`
+		FixedInterest     int64  `json:"fixed_interest_minor"`
 		OriginationFeeBPS int    `json:"origination_fee_bps"`
 		PenaltyRateBPS    int    `json:"penalty_rate_bps"`
 		PenaltyBasis      string `json:"penalty_basis"`
 		PenaltyCapBPS     int    `json:"penalty_cap_bps"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.ProductPolicyID) == "" || in.Version < 1 || in.AnnualRateBPS < 0 || in.OriginationFeeBPS < 0 || in.PenaltyRateBPS < 0 || in.PenaltyCapBPS < 0 || strings.TrimSpace(in.PenaltyBasis) == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, OriginationFeeBPS: in.OriginationFeeBPS, PenaltyRateBPS: in.PenaltyRateBPS, PenaltyBasis: in.PenaltyBasis, PenaltyCapBPS: in.PenaltyCapBPS, Active: true}); err != nil {
+	if in.InterestMethod == "" {
+		in.InterestMethod = "flat"
+	}
+	if in.RatePeriod == "" {
+		in.RatePeriod = "annual"
+	}
+	if in.InterestRateBPS == 0 {
+		in.InterestRateBPS = in.AnnualRateBPS
+	}
+	if strings.TrimSpace(in.ProductPolicyID) == "" || in.Version < 1 || in.AnnualRateBPS < 0 || in.InterestRateBPS < 0 || in.FixedInterest < 0 || in.OriginationFeeBPS < 0 || in.PenaltyRateBPS < 0 || in.PenaltyCapBPS < 0 || strings.TrimSpace(in.PenaltyBasis) == "" {
+		write(w, 400, map[string]string{"error": "invalid_request"})
+		return
+	}
+	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, InterestMethod: in.InterestMethod, RatePeriod: in.RatePeriod, InterestRateBPS: in.InterestRateBPS, FixedInterest: in.FixedInterest, OriginationFeeBPS: in.OriginationFeeBPS, PenaltyRateBPS: in.PenaltyRateBPS, PenaltyBasis: in.PenaltyBasis, PenaltyCapBPS: in.PenaltyCapBPS, Active: true}); err != nil {
 		write(w, 422, map[string]string{"error": "policy_rejected"})
 		return
 	}

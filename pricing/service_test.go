@@ -12,3 +12,18 @@ func TestQuoteCapturesVersionedPolicy(t *testing.T) {
 		t.Fatal(q, err)
 	}
 }
+
+func TestMonthlyFlatAndReducingBalance(t *testing.T) {
+	now := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
+	terms := ScheduleTerms{RepaymentIntervalDays: 30, GraceDays: 3, AllocationOrder: []string{"penalty", "fees", "interest", "principal"}}
+	base := Policy{ProductPolicyID: "prd", ProductPolicyVersion: 1, Version: 1, InterestMethod: "flat", RatePeriod: "monthly", InterestRateBPS: 1600, PenaltyBasis: "overdue_principal", Currency: "ZMW", Active: true}
+	flat, e := QuoteFor(base, terms, 500_000, 90, now)
+	if e != nil || flat.Interest != 240_000 || flat.Total != 740_000 {
+		t.Fatalf("flat=%+v err=%v", flat, e)
+	}
+	base.InterestMethod = "reducing_balance"
+	reducing, e := QuoteFor(base, terms, 500_000, 90, now)
+	if e != nil || reducing.Interest != 160_000 {
+		t.Fatalf("reducing=%+v err=%v", reducing, e)
+	}
+}
