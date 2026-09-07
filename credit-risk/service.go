@@ -20,29 +20,55 @@ var (
 var originPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 type Application struct {
-	ID, TenantID, ProductPolicyID, RelationshipID, PartyID, ApplicantRole, WalletID, Origin, Currency, Purpose, Status string
-	Amount                                                                                                             int64
-	TermDays                                                                                                           int
-	ProductPolicyVersion                                                                                               int
-	RepaymentIntervalDays, GraceDays                                                                                   int
-	AllocationOrder                                                                                                    []string
-	SubmittedAt                                                                                                        time.Time
+	ID                    string    `json:"id"`
+	TenantID              string    `json:"tenant_id"`
+	ProductPolicyID       string    `json:"product_policy_id"`
+	RelationshipID        string    `json:"relationship_id"`
+	PartyID               string    `json:"party_id,omitempty"`
+	ApplicantRole         string    `json:"applicant_role,omitempty"`
+	WalletID              string    `json:"wallet_id,omitempty"`
+	Origin                string    `json:"origin"`
+	Currency              string    `json:"currency"`
+	Purpose               string    `json:"purpose"`
+	Status                string    `json:"status"`
+	Amount                int64     `json:"amount_minor"`
+	TermDays              int       `json:"term_days"`
+	ProductPolicyVersion  int       `json:"product_policy_version"`
+	RepaymentIntervalDays int       `json:"repayment_interval_days"`
+	GraceDays             int       `json:"grace_days"`
+	AllocationOrder       []string  `json:"allocation_order"`
+	SubmittedAt           time.Time `json:"submitted_at"`
 }
 type Offer struct {
-	ApplicationID, QuoteID                     string
-	ProductPolicyVersion, PricingPolicyVersion int
-	Principal, Interest, Fees, Total           int64
-	TermDays                                   int
-	InstallmentCount, RepaymentIntervalDays    int
-	GraceDays, PenaltyRateBPS, PenaltyCapBPS   int
-	PenaltyBasis                               string
-	AllocationOrder                            []string
-	ExpiresAt                                  time.Time
+	ApplicationID         string    `json:"application_id"`
+	QuoteID               string    `json:"quote_id"`
+	ProductPolicyVersion  int       `json:"product_policy_version"`
+	PricingPolicyVersion  int       `json:"pricing_policy_version"`
+	Principal             int64     `json:"principal_minor"`
+	Interest              int64     `json:"interest_minor"`
+	Fees                  int64     `json:"fees_minor"`
+	Total                 int64     `json:"total_minor"`
+	TermDays              int       `json:"term_days"`
+	InstallmentCount      int       `json:"installment_count"`
+	RepaymentIntervalDays int       `json:"repayment_interval_days"`
+	GraceDays             int       `json:"grace_days"`
+	PenaltyRateBPS        int       `json:"penalty_rate_bps"`
+	PenaltyCapBPS         int       `json:"penalty_cap_bps"`
+	PenaltyBasis          string    `json:"penalty_basis"`
+	AllocationOrder       []string  `json:"allocation_order"`
+	ExpiresAt             time.Time `json:"expires_at"`
 }
-type Exposure struct{ ApprovedLimit, Reserved, Utilised int64 }
+type Exposure struct {
+	ApprovedLimit int64 `json:"approved_limit_minor"`
+	Reserved      int64 `json:"reserved_minor"`
+	Utilised      int64 `json:"utilised_minor"`
+}
 type Audit struct {
-	ApplicationID, Actor, Action, Reason string
-	At                                   time.Time
+	ApplicationID string    `json:"application_id"`
+	Actor         string    `json:"actor"`
+	Action        string    `json:"action"`
+	Reason        string    `json:"reason"`
+	At            time.Time `json:"at"`
 }
 type Store interface {
 	Application(context.Context, string) (Application, error)
