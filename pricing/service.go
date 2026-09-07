@@ -43,7 +43,7 @@ func QuoteFor(p Policy, terms ScheduleTerms, principal int64, termDays int, now 
 
 func validPenaltyBasis(value string) bool {
 	switch value {
-	case "overdue_principal", "overdue_interest", "overdue_principal_interest", "overdue_principal_interest_fees", "overdue_principal_interest_penalty", "overdue_principal_interest_fees_penalty", "overdue_interest_fees", "overdue_fees", "overdue_penalty", "overdue_principal_fees", "overdue_principal_penalty", "overdue_interest_penalty", "overdue_fees_penalty", "overdue_principal_fees_penalty", "overdue_interest_fees_penalty", "total_principal_released", "total_principal_balance":
+	case "overdue_principal", "overdue_interest", "overdue_principal_interest", "overdue_principal_interest_fees":
 		return true
 	default:
 		return false

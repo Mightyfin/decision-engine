@@ -11,14 +11,14 @@ var ErrNotFound = errors.New("product policy not found")
 
 // Policy is the product-engine output. It has no payment or accounting behaviour.
 type Policy struct {
-	ID, TenantID, Code, Currency, PricingPolicyID string
-	Version                                       int
-	MinimumAmount, MaximumAmount                  int64 // minor units
-	MinimumTermDays, MaximumTermDays              int
-	RepaymentIntervalDays, GraceDays              int
-	AllocationOrder                               []string
-	AllowedApplicantRoles                         []string
-	Active                                        bool
+	ID, TenantID, Code, Currency     string
+	Version                          int
+	MinimumAmount, MaximumAmount     int64 // minor units
+	MinimumTermDays, MaximumTermDays int
+	RepaymentIntervalDays, GraceDays int
+	AllocationOrder                  []string
+	AllowedApplicantRoles            []string
+	Active                           bool
 }
 
 type Store interface {
@@ -31,7 +31,7 @@ func (s Service) Validate(ctx context.Context, tenantID, policyID, currency stri
 	if err != nil {
 		return Policy{}, err
 	}
-	if !p.Active || p.Version < 1 || p.PricingPolicyID == "" || strings.TrimSpace(currency) != p.Currency || amount < p.MinimumAmount || amount > p.MaximumAmount || termDays < p.MinimumTermDays || termDays > p.MaximumTermDays || p.RepaymentIntervalDays < 1 || p.GraceDays < 0 || !ValidAllocationOrder(p.AllocationOrder) {
+	if !p.Active || p.Version < 1 || strings.TrimSpace(currency) != p.Currency || amount < p.MinimumAmount || amount > p.MaximumAmount || termDays < p.MinimumTermDays || termDays > p.MaximumTermDays || p.RepaymentIntervalDays < 1 || p.GraceDays < 0 || !ValidAllocationOrder(p.AllocationOrder) {
 		return Policy{}, fmt.Errorf("request does not meet configured product policy")
 	}
 	if len(p.AllowedApplicantRoles) > 0 {

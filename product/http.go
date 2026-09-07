@@ -53,10 +53,9 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 		Lifecycle     string `json:"lifecycle"`
 		ActiveVersion *int   `json:"active_version"`
 		Version       *struct {
-			Version         int    `json:"version"`
-			Currency        string `json:"currency"`
-			PricingPolicyID string `json:"pricing_policy_id"`
-			Configuration   struct {
+			Version       int    `json:"version"`
+			Currency      string `json:"currency"`
+			Configuration struct {
 				MinimumAmount         int64    `json:"minimum_amount_minor"`
 				MaximumAmount         int64    `json:"maximum_amount_minor"`
 				MinimumTerm           int      `json:"minimum_term_days"`
@@ -75,5 +74,5 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 		return Policy{}, ErrNotFound
 	}
 	c := out.Version.Configuration
-	return Policy{ID: out.ID, TenantID: out.TenantID, Code: out.Code, Currency: out.Version.Currency, PricingPolicyID: out.Version.PricingPolicyID, Version: out.Version.Version, MinimumAmount: c.MinimumAmount, MaximumAmount: c.MaximumAmount, MinimumTermDays: c.MinimumTerm, MaximumTermDays: c.MaximumTerm, RepaymentIntervalDays: c.RepaymentIntervalDays, GraceDays: c.GraceDays, AllocationOrder: c.AllocationOrder, AllowedApplicantRoles: c.AllowedApplicantRoles, Active: true}, nil
+	return Policy{ID: out.ID, TenantID: out.TenantID, Code: out.Code, Currency: out.Version.Currency, Version: out.Version.Version, MinimumAmount: c.MinimumAmount, MaximumAmount: c.MaximumAmount, MinimumTermDays: c.MinimumTerm, MaximumTermDays: c.MaximumTerm, RepaymentIntervalDays: c.RepaymentIntervalDays, GraceDays: c.GraceDays, AllocationOrder: c.AllocationOrder, AllowedApplicantRoles: c.AllowedApplicantRoles, Active: true}, nil
 }
