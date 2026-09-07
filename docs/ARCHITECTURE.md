@@ -5,8 +5,9 @@
                                       |
            +--------------------------+--------------------------+
            |                          |                          |
-     Product Engine            Credit & Risk Engine         Pricing Engine
-     What can be offered?      Can the customer use it?      What does it cost?
+     Product Engine            Credit & Risk Engine         Pricing Domain
+     external catalogue       canonical runtime owner      inside Decision Engine
+     What can be offered?      Can the customer use it?     What does it cost?
            +--------------------------+--------------------------+
                                       |
                               Decision / Quote
@@ -18,6 +19,8 @@
 ```
 
 An offer is a decision, not a disbursement instruction. Acceptance does not reserve funds or create a loan. Downstream services consume a future `credit.offer.accepted` event only after their own controls approve action. For example, an EFaaS tenant such as Hrvst can submit a credit evaluation request, but EFaaS must call this engine and return its tenant-scoped outcome rather than reproduce underwriting logic.
+
+The external `product-engine` is authoritative for product definitions and their versioned pricing configuration. The Decision Engine validates and prices a case from an immutable product-policy snapshot. Quote calculation is deliberately kept with the credit decision so that the recorded offer, policy versions and audit trail are atomic. Billing & Collections later applies the accepted terms to schedules, invoices, penalties and payment allocation. It cannot define the original price. There is no separately deployable Pricing Engine, and the historical standalone `credit-risk-engine` prototype is not a runtime component.
 
 All amounts are minor units in domain code. Database migrations use `numeric(18,2)` at the persistence boundary. Product and pricing policy carry versions, preventing changed settings from silently rewriting historic applications or offers.
 

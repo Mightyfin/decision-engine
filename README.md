@@ -1,12 +1,14 @@
 # MightyFin Decision Engine
 
-The Decision Engine is the **Mighty Core Financial Engines** boundary. EFaaS is a distribution and orchestration layer around it; it is not another decision engine. The same product, credit/risk and pricing decisions can be consumed by direct MightyFin lending, embedded-finance products, and tenant-facing EFaaS APIs.
+The Decision Engine is the **Mighty Core Financial Engines decision boundary**. EFaaS is a distribution and orchestration layer around it; it is not another decision engine. The same credit/risk and pricing decisions can be consumed by direct MightyFin lending, embedded-finance products, and tenant-facing EFaaS APIs.
 
 It is organised into three deliberately separate domains:
 
-- **Product Engine** — eligibility, amount and term boundaries, lifecycle availability, and policy versions.
+- **Product Engine integration** — the external `product-engine` owns product definitions, eligibility, amount and term boundaries, lifecycle availability, and product policy versions. This service consumes immutable product-policy snapshots; it does not maintain a second product catalogue.
 - **Credit & Risk Engine** — applications, manual review, limits/exposure, offers, acceptance and immutable decision audit.
-- **Pricing Engine** — deterministic price quotes from explicit product policy inputs.
+- **Pricing domain** — deterministic quotes from explicit, versioned product-pricing inputs. Pricing remains a domain inside this repository; there is no standalone Pricing Engine service or repository.
+
+This repository is the canonical runtime owner of Credit & Risk and quote calculation. The historical standalone `credit-risk-engine` prototype is superseded and must not be deployed. Billing & Collections consumes the resulting immutable terms to invoice, schedule and collect; it does not originate or silently recalculate a product's price.
 
 It does **not** move money, post ledger entries, create repayment schedules, calculate penalties, or bypass provider/payment controls. Payment Rails, Wallet Ledger and LMS remain the owners of those responsibilities.
 
