@@ -31,6 +31,9 @@ var dynamicOriginTags string
 //go:embed 00007_external_product_authority.sql
 var externalProductAuthority string
 
+//go:embed 00008_external_pricing_authority.sql
+var externalPricingAuthority string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -53,7 +56,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00006_dynamic_origin_tags", dynamicOriginTags); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00007_external_product_authority", externalProductAuthority)
+	if err := apply(ctx, pool, "00007_external_product_authority", externalProductAuthority); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00008_external_pricing_authority", externalPricingAuthority)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

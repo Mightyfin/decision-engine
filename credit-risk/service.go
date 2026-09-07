@@ -20,13 +20,13 @@ var (
 var originPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 type Application struct {
-	ID, TenantID, ProductPolicyID, RelationshipID, PartyID, ApplicantRole, WalletID, Origin, Currency, Purpose, Status string
-	Amount                                                                                                             int64
-	TermDays                                                                                                           int
-	ProductPolicyVersion                                                                                               int
-	RepaymentIntervalDays, GraceDays                                                                                   int
-	AllocationOrder                                                                                                    []string
-	SubmittedAt                                                                                                        time.Time
+	ID, TenantID, ProductPolicyID, PricingPolicyID, RelationshipID, PartyID, ApplicantRole, WalletID, Origin, Currency, Purpose, Status string
+	Amount                                                                                                                              int64
+	TermDays                                                                                                                            int
+	ProductPolicyVersion                                                                                                                int
+	RepaymentIntervalDays, GraceDays                                                                                                    int
+	AllocationOrder                                                                                                                     []string
+	SubmittedAt                                                                                                                         time.Time
 }
 type Offer struct {
 	ApplicationID, QuoteID                     string
@@ -100,6 +100,7 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 	}
 	a.Status = "pending_review"
 	a.ProductPolicyVersion = p.Version
+	a.PricingPolicyID = p.PricingPolicyID
 	a.RepaymentIntervalDays = p.RepaymentIntervalDays
 	a.GraceDays = p.GraceDays
 	a.AllocationOrder = append([]string(nil), p.AllocationOrder...)

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
 	"github.com/Mightyfin/decision-engine/pricing"
@@ -23,21 +24,17 @@ type Authenticator interface {
 	Authenticate(*http.Request) (Principal, error)
 }
 type pricingStore interface {
-	PricingPolicy(context.Context, string, string) (pricing.Policy, error)
+	Quote(context.Context, pricing.QuoteRequest) (pricing.Quote, error)
 }
 type applicationStore interface {
 	Application(context.Context, string) (creditrisk.Application, error)
 	ReviewQueue(context.Context, string, int) ([]creditrisk.Application, error)
-}
-type policyStore interface {
-	CreatePricingPolicy(context.Context, string, pricing.Policy) error
 }
 type Server struct {
 	Auth         Authenticator
 	Credit       creditrisk.Service
 	Applications applicationStore
 	Pricing      pricingStore
-	Policies     policyStore
 }
 
 func (s Server) Handler() http.Handler {
@@ -50,37 +47,7 @@ func (s Server) Handler() http.Handler {
 	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
 	m.HandleFunc("POST /v1/internal/credit/applications/{id}/decision", s.decide)
-	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/pricing-policies", s.createPricingPolicy)
 	return m
-}
-
-func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
-	_, ok := s.principal(w, r, "credit_policy_admin")
-	if !ok {
-		return
-	}
-	if s.Policies == nil {
-		write(w, 403, map[string]string{"error": "forbidden"})
-		return
-	}
-	var in struct {
-		ProductPolicyID   string `json:"product_policy_id"`
-		Version           int    `json:"version"`
-		AnnualRateBPS     int    `json:"annual_rate_bps"`
-		OriginationFeeBPS int    `json:"origination_fee_bps"`
-		PenaltyRateBPS    int    `json:"penalty_rate_bps"`
-		PenaltyBasis      string `json:"penalty_basis"`
-		PenaltyCapBPS     int    `json:"penalty_cap_bps"`
-	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.ProductPolicyID) == "" || in.Version < 1 || in.AnnualRateBPS < 0 || in.OriginationFeeBPS < 0 || in.PenaltyRateBPS < 0 || in.PenaltyCapBPS < 0 || strings.TrimSpace(in.PenaltyBasis) == "" {
-		write(w, 400, map[string]string{"error": "invalid_request"})
-		return
-	}
-	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, OriginationFeeBPS: in.OriginationFeeBPS, PenaltyRateBPS: in.PenaltyRateBPS, PenaltyBasis: in.PenaltyBasis, PenaltyCapBPS: in.PenaltyCapBPS, Active: true}); err != nil {
-		write(w, 422, map[string]string{"error": "policy_rejected"})
-		return
-	}
-	write(w, 201, map[string]any{"product_policy_id": in.ProductPolicyID, "version": in.Version})
 }
 func (s Server) principal(w http.ResponseWriter, r *http.Request, role string) (Principal, bool) {
 	p, err := s.Auth.Authenticate(r)
@@ -189,14 +156,21 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	policy, err := s.Pricing.PricingPolicy(r.Context(), a.TenantID, a.ProductPolicyID)
-	if err != nil {
-		write(w, 422, map[string]string{"error": "pricing_policy_unavailable"})
-		return
+	credit := s.Credit
+	policy := pricing.Policy{ProductPolicyID: a.ProductPolicyID, ProductPolicyVersion: a.ProductPolicyVersion, Currency: a.Currency, Active: true}
+	if in.Decision == "offer" {
+		ctx := pricing.WithBearerToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		q, quoteErr := s.Pricing.Quote(ctx, pricing.QuoteRequest{PricingPolicyID: a.PricingPolicyID, ProductPolicyID: a.ProductPolicyID, ProductPolicyVersion: a.ProductPolicyVersion, Currency: a.Currency, Amount: a.Amount, TermDays: a.TermDays, RepaymentIntervalDays: a.RepaymentIntervalDays, GraceDays: a.GraceDays, AllocationOrder: a.AllocationOrder})
+		if quoteErr != nil {
+			write(w, 422, map[string]string{"error": "pricing_policy_unavailable"})
+			return
+		}
+		credit.Pricing = func(pricing.Policy, pricing.ScheduleTerms, int64, int, time.Time) (pricing.Quote, error) {
+			return q, nil
+		}
+		policy.Version, policy.PenaltyRateBPS, policy.PenaltyBasis, policy.PenaltyCapBPS = q.PricingPolicyVersion, q.PenaltyRateBPS, q.PenaltyBasis, q.PenaltyCapBPS
 	}
-	policy.ProductPolicyVersion = a.ProductPolicyVersion
-	policy.Currency = a.Currency
-	a, err = s.Credit.Decide(r.Context(), a.ID, p.Subject, in.Decision, in.Reason, policy)
+	a, err = credit.Decide(r.Context(), a.ID, p.Subject, in.Decision, in.Reason, policy)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "decision_rejected"})
 		return

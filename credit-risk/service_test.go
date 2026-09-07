@@ -51,7 +51,7 @@ func (m *memory) AppendAudit(_ context.Context, a Audit) error {
 func TestManualDecisionLifecycle(t *testing.T) {
 	now := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
 	m := &memory{a: map[string]Application{}, o: map[string]Offer{}}
-	s := Service{Store: m, Products: product.Service{Store: products{product.Policy{ID: "p", TenantID: "t", Currency: "ZMW", Version: 2, Active: true, MinimumAmount: 100, MaximumAmount: 10_000, MinimumTermDays: 7, MaximumTermDays: 90, RepaymentIntervalDays: 30, GraceDays: 3, AllocationOrder: []string{"penalty", "fees", "interest", "principal"}}}}, Pricing: pricing.QuoteFor, Clock: func() time.Time { return now }}
+	s := Service{Store: m, Products: product.Service{Store: products{product.Policy{ID: "p", TenantID: "t", Currency: "ZMW", PricingPolicyID: "pp_1", Version: 2, Active: true, MinimumAmount: 100, MaximumAmount: 10_000, MinimumTermDays: 7, MaximumTermDays: 90, RepaymentIntervalDays: 30, GraceDays: 3, AllocationOrder: []string{"penalty", "fees", "interest", "principal"}}}}, Pricing: pricing.QuoteFor, Clock: func() time.Time { return now }}
 	a, e := s.Submit(context.Background(), Application{ID: "app", TenantID: "t", ProductPolicyID: "p", RelationshipID: "rel", Currency: "ZMW", Purpose: "stock", Amount: 1000, TermDays: 30}, "partner")
 	if e != nil || a.Status != "pending_review" || a.ProductPolicyVersion != 2 {
 		t.Fatal(a, e)
