@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ var (
 	ErrNotFound     = errors.New("credit application not found")
 	ErrInvalidState = errors.New("invalid credit lifecycle transition")
 )
+
+var originPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 type Application struct {
 	ID, TenantID, ProductPolicyID, RelationshipID, PartyID, ApplicantRole, WalletID, Origin, Currency, Purpose, Status string
@@ -87,7 +90,10 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 	if a.PartyID != "" && a.ApplicantRole == "" {
 		return Application{}, fmt.Errorf("party identity requires an applicant role")
 	}
-	if a.Origin != "" && a.Origin != "direct_lending" && a.Origin != "embedded_finance" && a.Origin != "efaas" {
+	if a.Origin == "" {
+		a.Origin = "legacy"
+	}
+	if !originPattern.MatchString(a.Origin) {
 		return Application{}, fmt.Errorf("unsupported credit origin")
 	}
 	a.Status = "pending_review"
