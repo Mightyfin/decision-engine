@@ -32,6 +32,11 @@ func (s Postgres) CreateApplication(ctx context.Context, a creditrisk.Applicatio
 		if err := saveApplication(ctx, tx, a); err != nil {
 			return err
 		}
+		if a.Environment != "" {
+			if _, err := tx.Exec(ctx, `INSERT INTO credit_application_environments(application_id,environment) VALUES($1,$2)`, a.ID, a.Environment); err != nil {
+				return err
+			}
+		}
 		return appendAudit(ctx, tx, audit)
 	})
 }

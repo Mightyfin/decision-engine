@@ -34,6 +34,9 @@ var externalProductAuthority string
 //go:embed 00008_pricing_methods.sql
 var pricingMethods string
 
+//go:embed 00009_application_evidence.sql
+var applicationEvidence string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -59,7 +62,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00007_external_product_authority", externalProductAuthority); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00008_pricing_methods", pricingMethods)
+	if err := apply(ctx, pool, "00008_pricing_methods", pricingMethods); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00009_application_evidence", applicationEvidence)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

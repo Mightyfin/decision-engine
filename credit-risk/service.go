@@ -20,6 +20,7 @@ var (
 var originPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 type Application struct {
+	Environment           string    `json:"environment,omitempty"`
 	ID                    string    `json:"id"`
 	TenantID              string    `json:"tenant_id"`
 	ProductPolicyID       string    `json:"product_policy_id"`

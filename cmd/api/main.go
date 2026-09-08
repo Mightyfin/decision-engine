@@ -50,7 +50,7 @@ func main() {
 	}
 	store := storage.Postgres{Pool: pool}
 	credit := creditrisk.Service{Store: store, Products: product.Service{Store: product.HTTPStore{BaseURL: productURL}}, Pricing: pricing.QuoteFor}
-	server := &http.Server{Addr: address(), Handler: httpapi.Server{Auth: verifier, Credit: credit, Applications: store, Pricing: store, Policies: store}.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: address(), Handler: httpapi.Server{Auth: verifier, Credit: credit, Applications: store, Pricing: store, Policies: store, DocumentURL: os.Getenv("DECISION_ENGINE_DOCUMENT_BASE_URL")}.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("server failed", "error", err)

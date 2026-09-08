@@ -17,6 +17,7 @@ import (
 
 type Principal struct {
 	Subject, TenantID string
+	Environment       string
 	Roles             map[string]bool
 }
 
@@ -34,6 +35,7 @@ type policyStore interface {
 	CreatePricingPolicy(context.Context, string, pricing.Policy) error
 }
 type Server struct {
+	DocumentURL  string
 	Auth         Authenticator
 	Credit       creditrisk.Service
 	Applications applicationStore
@@ -47,6 +49,7 @@ func (s Server) Handler() http.Handler {
 		write(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
+	m.HandleFunc("POST /v1/credit/applications/{id}/evidence", s.bindEvidence)
 	m.HandleFunc("GET /v1/credit/applications/{id}", s.get)
 	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
@@ -136,7 +139,7 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := product.WithBearerToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	a, err := s.Credit.Submit(ctx, creditrisk.Application{ID: newID("cap"), TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
+	a, err := s.Credit.Submit(ctx, creditrisk.Application{ID: newID("cap"), Environment: p.Environment, TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "validation_failed"})
 		return
