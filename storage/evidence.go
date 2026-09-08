@@ -52,7 +52,7 @@ func (s Postgres) BindEvidence(ctx context.Context, e creditrisk.Evidence) error
 		if err != nil {
 			return err
 		}
-		if status != "pending_review" {
+		if status != "pending_review" && status != "awaiting_information" {
 			return creditrisk.ErrInvalidState
 		}
 		tag, err := tx.Exec(ctx, `INSERT INTO credit_application_evidence(application_id,document_id,sha256,tenant_id,environment,party_id,document_type,linked_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(application_id,document_id,sha256) DO NOTHING`, e.ApplicationID, e.DocumentID, e.SHA256, e.TenantID, e.Environment, e.PartyID, e.DocumentType, e.LinkedBy)

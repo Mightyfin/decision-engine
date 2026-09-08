@@ -75,7 +75,42 @@ func TestEvidencePersistence(t *testing.T) {
 	if _, err = pool.Exec(ctx, `UPDATE credit_application_environments SET environment='production'`); err == nil {
 		t.Fatal("mutable environment")
 	}
-	if _, err = pool.Exec(ctx, `UPDATE credit_applications SET status='offered' WHERE id=$1`, a.ID); err != nil {
+	version, err := s.ReviewRevision(ctx, a.TenantID, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ChangeInformationState(ctx, a.ID, "foreign", a.Environment, "analyst", "Please provide bank statements", version, false); !errors.Is(err, creditrisk.ErrNotFound) {
+		t.Fatal("foreign request", err)
+	}
+	if err = s.ChangeInformationState(ctx, a.ID, a.TenantID, a.Environment, "analyst", "Please provide bank statements", version, false); err != nil {
+		t.Fatal(err)
+	}
+	a.Status = "declined"
+	if err = s.RecordDecision(creditrisk.WithReviewVersion(ctx, version), a, nil, creditrisk.Audit{ApplicationID: a.ID, Actor: "analyst", Action: "decline", Reason: "test decision"}); !errors.Is(err, creditrisk.ErrInvalidState) {
+		t.Fatal("decision while awaiting information", err)
+	}
+	e.DocumentID = "additional-document"
+	if err = s.BindEvidence(ctx, e); err != nil {
+		t.Fatal("evidence while awaiting information", err)
+	}
+	if err = s.ChangeInformationState(ctx, a.ID, a.TenantID, a.Environment, "tenant", "Statements have been attached", version, true); !errors.Is(err, creditrisk.ErrInvalidState) {
+		t.Fatal("stale resubmission", err)
+	}
+	latest, err := s.ReviewRevision(ctx, a.TenantID, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ChangeInformationState(ctx, a.ID, a.TenantID, a.Environment, "tenant", "Statements have been attached", latest, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordDecision(creditrisk.WithReviewVersion(ctx, version), a, nil, creditrisk.Audit{ApplicationID: a.ID, Actor: "analyst", Action: "decline", Reason: "test decision"}); !errors.Is(err, creditrisk.ErrInvalidState) {
+		t.Fatal("stale decision after resubmission", err)
+	}
+	latest, err = s.ReviewRevision(ctx, a.TenantID, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordDecision(creditrisk.WithReviewVersion(ctx, latest), a, nil, creditrisk.Audit{ApplicationID: a.ID, Actor: "analyst", Action: "decline", Reason: "Reviewed updated case"}); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.BindEvidence(ctx, e); !errors.Is(err, creditrisk.ErrInvalidState) {

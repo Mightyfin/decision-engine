@@ -16,6 +16,17 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.principal(w, r, "credit_analyst"); !ok {
 		return
 	}
+	version := ""
+	if versions, ok := s.Applications.(interface {
+		ReviewRevision(context.Context, string, string) (string, error)
+	}); ok {
+		var err error
+		version, err = versions.ReviewRevision(r.Context(), r.PathValue("tenant_id"), r.PathValue("id"))
+		if err != nil {
+			write(w, 503, map[string]string{"error": "review_unavailable"})
+			return
+		}
+	}
 	a, err := s.Applications.Application(r.Context(), r.PathValue("id"))
 	if errors.Is(err, creditrisk.ErrNotFound) || (err == nil && a.TenantID != r.PathValue("tenant_id")) {
 		write(w, 404, map[string]string{"error": "not_found"})
@@ -48,5 +59,5 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	for _, e := range history {
 		events = append(events, map[string]any{"actor": e.Actor, "action": e.Action, "reason": e.Reason, "at": e.At})
 	}
-	write(w, 200, map[string]any{"application": a, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
+	write(w, 200, map[string]any{"application": a, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
 }

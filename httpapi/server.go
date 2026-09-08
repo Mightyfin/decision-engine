@@ -50,6 +50,9 @@ func (s Server) Handler() http.Handler {
 	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
 	m.HandleFunc("POST /v1/credit/applications/{id}/evidence", s.bindEvidence)
+	m.HandleFunc("GET /v1/credit/applications/{id}/information-request", s.information)
+	m.HandleFunc("POST /v1/credit/applications/{id}/resubmit", s.information)
+	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/applications/{id}/information-request", s.information)
 	m.HandleFunc("GET /v1/credit/applications/{id}", s.get)
 	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
@@ -244,8 +247,9 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Decision string `json:"decision"`
 		Reason   string `json:"reason"`
+		Revision string `json:"review_revision"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Reason) == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Reason) == "" || in.Revision == "" {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
@@ -256,7 +260,7 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	policy.ProductPolicyVersion = a.ProductPolicyVersion
 	policy.Currency = a.Currency
-	a, err = s.Credit.Decide(r.Context(), a.ID, p.Subject, in.Decision, in.Reason, policy)
+	a, err = s.Credit.Decide(creditrisk.WithReviewVersion(r.Context(), in.Revision), a.ID, p.Subject, in.Decision, in.Reason, policy)
 	if err != nil {
 		write(w, 422, map[string]string{"error": "decision_rejected"})
 		return

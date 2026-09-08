@@ -43,6 +43,16 @@ func (s Postgres) CreateApplication(ctx context.Context, a creditrisk.Applicatio
 
 func (s Postgres) RecordDecision(ctx context.Context, a creditrisk.Application, offer *creditrisk.Offer, audit creditrisk.Audit) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
+		var status string
+		if err := tx.QueryRow(ctx, `SELECT status FROM credit_applications WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, a.ID, a.TenantID).Scan(&status); err != nil {
+			return err
+		}
+		if status != "pending_review" {
+			return creditrisk.ErrInvalidState
+		}
+		if err := checkReviewVersion(ctx, tx, a.ID, creditrisk.ReviewVersion(ctx)); err != nil {
+			return err
+		}
 		if offer != nil {
 			if err := saveOffer(ctx, tx, *offer); err != nil {
 				return err
