@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
@@ -49,6 +50,7 @@ func (s Server) Handler() http.Handler {
 	m.HandleFunc("GET /v1/credit/applications/{id}", s.get)
 	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
+	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue/page", s.queuePage)
 	m.HandleFunc("POST /v1/internal/credit/applications/{id}/decision", s.decide)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/pricing-policies", s.createPricingPolicy)
 	return m
@@ -186,6 +188,42 @@ func (s Server) queue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, queue)
+}
+
+func (s Server) queuePage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.principal(w, r, "credit_analyst"); !ok {
+		return
+	}
+	limit := 20
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		var err error
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 100 {
+			write(w, 400, map[string]string{"error": "invalid_limit"})
+			return
+		}
+	}
+	store, ok := s.Applications.(interface {
+		ReviewQueuePage(context.Context, string, int, string) ([]creditrisk.Application, error)
+	})
+	if !ok {
+		write(w, 503, map[string]string{"error": "pagination_unavailable"})
+		return
+	}
+	items, err := store.ReviewQueuePage(r.Context(), r.PathValue("tenant_id"), limit+1, r.URL.Query().Get("after"))
+	if err != nil {
+		write(w, 500, map[string]string{"error": "internal_error"})
+		return
+	}
+	next := ""
+	if len(items) > limit {
+		items = items[:limit]
+		next = items[len(items)-1].ID
+	}
+	if items == nil {
+		items = []creditrisk.Application{}
+	}
+	write(w, 200, map[string]any{"data": items, "next_cursor": next})
 }
 
 func (s Server) decide(w http.ResponseWriter, r *http.Request) {

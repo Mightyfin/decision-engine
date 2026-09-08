@@ -141,7 +141,14 @@ func (s Postgres) ReviewQueue(ctx context.Context, tenantID string, limit int) (
 	if limit < 1 || limit > 100 {
 		limit = 50
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT id,tenant_id,product_policy_id,relationship_id,COALESCE(party_id,''),COALESCE(applicant_role,''),COALESCE(wallet_id,''),COALESCE(origin,''),currency,purpose,status,amount,term_days,product_policy_version,repayment_interval_days,grace_days,allocation_order,submitted_at FROM credit_applications WHERE tenant_id=$1 AND status='pending_review' ORDER BY submitted_at,id LIMIT $2`, tenantID, limit)
+	return s.ReviewQueuePage(ctx, tenantID, limit, "")
+}
+
+func (s Postgres) ReviewQueuePage(ctx context.Context, tenantID string, limit int, after string) ([]creditrisk.Application, error) {
+	if limit < 1 || limit > 101 {
+		limit = 21
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT id,tenant_id,product_policy_id,relationship_id,COALESCE(party_id,''),COALESCE(applicant_role,''),COALESCE(wallet_id,''),COALESCE(origin,''),currency,purpose,status,amount,term_days,product_policy_version,repayment_interval_days,grace_days,allocation_order,submitted_at FROM credit_applications WHERE tenant_id=$1 AND status='pending_review' AND ($3='' OR (submitted_at,id) > (SELECT submitted_at,id FROM credit_applications WHERE id=$3 AND tenant_id=$1)) ORDER BY submitted_at,id LIMIT $2`, tenantID, limit, after)
 	if err != nil {
 		return nil, err
 	}
