@@ -55,6 +55,7 @@ func (s Server) Handler() http.Handler {
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue/page", s.queuePage)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/applications/{id}/review", s.reviewCase)
+	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/applications/{id}/evidence", s.listEvidence)
 	m.HandleFunc("POST /v1/internal/credit/applications/{id}/decision", s.decide)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/pricing-policies", s.createPricingPolicy)
 	return m

@@ -19,6 +19,29 @@ func (s Postgres) EvidenceApplication(ctx context.Context, id string) (creditris
 	}
 	return a, err
 }
+
+func (s Postgres) EvidencePage(ctx context.Context, id, tenant, environment, afterDoc, afterHash string, limit int) ([]creditrisk.Evidence, error) {
+	if tenant == "" || environment == "" {
+		return nil, creditrisk.ErrEvidenceScope
+	}
+	if limit < 1 || limit > 51 {
+		limit = 51
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT e.application_id,e.document_id,e.sha256,e.tenant_id,e.environment,e.party_id,e.document_type,e.linked_by,e.linked_at FROM credit_application_evidence e JOIN credit_applications a ON a.id=e.application_id JOIN credit_application_environments x ON x.application_id=a.id WHERE e.application_id=$1 AND e.tenant_id=$2 AND a.tenant_id=$2 AND e.environment=$3 AND x.environment=$3 AND e.party_id=a.party_id AND ($4='' OR (e.document_id,e.sha256)>($4,$5)) ORDER BY e.document_id,e.sha256 LIMIT $6`, id, tenant, environment, afterDoc, afterHash, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []creditrisk.Evidence{}
+	for rows.Next() {
+		var e creditrisk.Evidence
+		if err = rows.Scan(&e.ApplicationID, &e.DocumentID, &e.SHA256, &e.TenantID, &e.Environment, &e.PartyID, &e.DocumentType, &e.LinkedBy, &e.LinkedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, e)
+	}
+	return result, rows.Err()
+}
 func (s Postgres) BindEvidence(ctx context.Context, e creditrisk.Evidence) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		var status string

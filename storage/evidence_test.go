@@ -45,6 +45,22 @@ func TestEvidencePersistence(t *testing.T) {
 		}
 	}
 	var count int
+	rows, err := s.EvidencePage(ctx, a.ID, a.TenantID, a.Environment, "", "", 51)
+	if err != nil || len(rows) != 1 {
+		t.Fatal("evidence list", rows, err)
+	}
+	rows, err = s.EvidencePage(ctx, a.ID, "foreign", a.Environment, "", "", 51)
+	if err != nil || len(rows) != 0 {
+		t.Fatal("cross-tenant evidence list", rows, err)
+	}
+	rows, err = s.EvidencePage(ctx, a.ID, a.TenantID, "production", "", "", 51)
+	if err != nil || len(rows) != 0 {
+		t.Fatal("cross-environment evidence list", rows, err)
+	}
+	rows, err = s.EvidencePage(ctx, a.ID, a.TenantID, a.Environment, e.DocumentID, e.SHA256, 51)
+	if err != nil || len(rows) != 0 {
+		t.Fatal("evidence cursor", rows, err)
+	}
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM credit_decision_audit WHERE application_id=$1 AND action='evidence_linked'`, a.ID).Scan(&count); err != nil || count != 1 {
 		t.Fatal("duplicate audit", count, err)
 	}
