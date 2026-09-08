@@ -48,5 +48,5 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	for _, e := range history {
 		events = append(events, map[string]any{"actor": e.Actor, "action": e.Action, "reason": e.Reason, "at": e.At})
 	}
-	write(w, 200, map[string]any{"application": a, "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
+	write(w, 200, map[string]any{"application": a, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
 }

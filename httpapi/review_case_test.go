@@ -29,7 +29,7 @@ func TestReviewCaseScopeAndHistory(t *testing.T) {
 		if w.Code != tc.status {
 			t.Fatal(w.Code, w.Body.String())
 		}
-		if tc.status == 200 && (!strings.Contains(w.Body.String(), `"actor":"reviewer"`) || !strings.Contains(w.Body.String(), `"offer":null`)) {
+		if tc.status == 200 && (!strings.Contains(w.Body.String(), `"actor":"reviewer"`) || !strings.Contains(w.Body.String(), `"offer":null`) || !strings.Contains(w.Body.String(), `"scenario":"unclassified"`) || !strings.Contains(w.Body.String(), `"subject_status":"incomplete"`)) {
 			t.Fatal(w.Body.String())
 		}
 		if tc.status != 200 && s.historyReads != 0 {
