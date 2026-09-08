@@ -28,6 +28,18 @@ func TestQueueCursorIsolationAndDecidedAnchor(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := Postgres{Pool: pool}
+	_, e = pool.Exec(ctx, `CREATE TEMP TABLE credit_decision_audit(id bigserial,application_id text,actor text,action text,reason text,created_at timestamptz DEFAULT now()); INSERT INTO credit_decision_audit(application_id,actor,action,reason) VALUES('a','analyst','offered','Reviewed evidence'),('c','other','declined','Other tenant')`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	history, e := s.ReviewHistory(ctx, "tenant-a", "a")
+	if e != nil || len(history) != 1 || history[0].Actor != "analyst" {
+		t.Fatal(history, e)
+	}
+	history, e = s.ReviewHistory(ctx, "tenant-b", "a")
+	if e != nil || len(history) != 0 {
+		t.Fatal("cross-tenant history", history, e)
+	}
 	rows, e := s.ReviewQueuePage(ctx, "tenant-a", 1, "")
 	if e != nil || len(rows) != 1 || rows[0].ID != "a" {
 		t.Fatal(rows, e)
