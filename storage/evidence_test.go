@@ -46,6 +46,15 @@ func TestEvidencePersistence(t *testing.T) {
 	}
 	var count int
 	rows, err := s.EvidencePage(ctx, a.ID, a.TenantID, a.Environment, "", "", 51)
+	for _, scope := range []struct {
+		tenant, environment, hash string
+		want                      bool
+	}{{a.TenantID, a.Environment, e.SHA256, true}, {"foreign", a.Environment, e.SHA256, false}, {a.TenantID, "production", e.SHA256, false}, {a.TenantID, a.Environment, strings.Repeat("b", 64), false}} {
+		found, checkErr := s.HasEvidence(ctx, a.ID, scope.tenant, scope.environment, e.DocumentID, scope.hash)
+		if checkErr != nil || found != scope.want {
+			t.Fatalf("case document binding: %v %v", found, checkErr)
+		}
+	}
 	if err != nil || len(rows) != 1 {
 		t.Fatal("evidence list", rows, err)
 	}

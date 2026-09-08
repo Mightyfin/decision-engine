@@ -20,11 +20,12 @@ type OIDCVerifier struct {
 }
 
 type claims struct {
-	Subject     string `json:"sub"`
-	TenantID    string `json:"tenant_id"`
-	Environment string `json:"environment"`
-	Scope       string `json:"scope"`
-	RealmAccess struct {
+	Subject       string `json:"sub"`
+	TenantID      string `json:"tenant_id"`
+	ApplicationID string `json:"application_id"`
+	Environment   string `json:"environment"`
+	Scope         string `json:"scope"`
+	RealmAccess   struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
 }
@@ -57,7 +58,7 @@ func (v *OIDCVerifier) Authenticate(r *http.Request) (httpapi.Principal, error) 
 	for _, scope := range strings.Fields(c.Scope) {
 		switch scope {
 		case "credit:evidence:write":
-			roles["credit_evidence_writer"] = true
+			roles["credit_evidence_writer"] = c.ApplicationID != "" || roles["tenant_owner"] || roles["tenant_admin"] || roles["tenant_credit_operator"]
 		case "decision:submit", "decision:read", "credit:read", "credit:write":
 			roles["decision_workload"] = true
 		case "decision:review":

@@ -50,6 +50,7 @@ func (s Server) Handler() http.Handler {
 	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
 	m.HandleFunc("POST /v1/credit/applications/{id}/evidence", s.bindEvidence)
+	m.HandleFunc("POST /v1/credit/applications/{id}/document-access", s.documentAccess)
 	m.HandleFunc("GET /v1/credit/applications/{id}/information-request", s.information)
 	m.HandleFunc("POST /v1/credit/applications/{id}/resubmit", s.information)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/applications/{id}/information-request", s.information)

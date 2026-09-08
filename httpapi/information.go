@@ -69,7 +69,7 @@ func (s Server) information(w http.ResponseWriter, r *http.Request) {
 			write(w, 503, map[string]string{"error": "workflow_unavailable"})
 			return
 		}
-		write(w, 200, map[string]string{"application_id": id, "status": a.Status, "review_revision": revision, "information_requested": message})
+		write(w, 200, map[string]any{"application_id": id, "status": a.Status, "review_revision": revision, "information_requested": message, "assessment_context": a.AssessmentContext(), "environment": a.Environment})
 		return
 	}
 	var in struct {

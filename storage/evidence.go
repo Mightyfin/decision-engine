@@ -20,6 +20,12 @@ func (s Postgres) EvidenceApplication(ctx context.Context, id string) (creditris
 	return a, err
 }
 
+func (s Postgres) HasEvidence(ctx context.Context, id, tenant, environment, document, digest string) (bool, error) {
+	var found bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM credit_application_evidence e JOIN credit_applications a ON a.id=e.application_id JOIN credit_application_environments x ON x.application_id=a.id WHERE e.application_id=$1 AND e.tenant_id=$2 AND a.tenant_id=$2 AND e.environment=$3 AND x.environment=$3 AND e.party_id=a.party_id AND e.document_id=$4 AND e.sha256=$5)`, id, tenant, environment, document, digest).Scan(&found)
+	return found, err
+}
+
 func (s Postgres) EvidencePage(ctx context.Context, id, tenant, environment, afterDoc, afterHash string, limit int) ([]creditrisk.Evidence, error) {
 	if tenant == "" || environment == "" {
 		return nil, creditrisk.ErrEvidenceScope
