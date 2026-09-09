@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +53,10 @@ func (s Server) Handler() http.Handler {
 		write(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
+	m.HandleFunc("POST /v1/credit/applications/{id}/cancel", s.cancelApplication)
+	m.HandleFunc("GET /v1/credit/applications/{id}/commercial-review", s.commercialReview)
+	m.HandleFunc("POST /v1/credit/applications/{id}/commercial-review", s.commercialReview)
+	m.HandleFunc("GET /v1/credit/applications", s.listApplications)
 	m.HandleFunc("POST /v1/credit/application-drafts", s.submit)
 	m.HandleFunc("GET /v1/credit/applications/{id}/draft", s.draft)
 	m.HandleFunc("PUT /v1/credit/applications/{id}/draft", s.draft)
@@ -61,6 +67,8 @@ func (s Server) Handler() http.Handler {
 	m.HandleFunc("POST /v1/credit/applications/{id}/resubmit", s.information)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/applications/{id}/information-request", s.information)
 	m.HandleFunc("GET /v1/credit/applications/{id}", s.get)
+	m.HandleFunc("GET /v1/credit/applications/{id}/offer", s.getOffer)
+	m.HandleFunc("GET /v1/credit/applications/{id}/history", s.tenantTimeline)
 	m.HandleFunc("POST /v1/credit/applications/{id}/accept", s.accept)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue", s.queue)
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/review-queue/page", s.queuePage)
@@ -127,7 +135,11 @@ func (s Server) principal(w http.ResponseWriter, r *http.Request, role string) (
 			CheckDraftCaller(context.Context, string, string, string, string) error
 		}); ok {
 			if err := guard.CheckDraftCaller(r.Context(), r.PathValue("id"), p.TenantID, p.Environment, p.ApplicationID); err != nil {
-				write(w, 404, map[string]string{"error": "not_found"})
+				if errors.Is(err, creditrisk.ErrNotFound) {
+					write(w, 404, map[string]string{"error": "not_found"})
+				} else {
+					write(w, 503, map[string]string{"error": "application_unavailable"})
+				}
 				return p, false
 			}
 		}
@@ -136,7 +148,7 @@ func (s Server) principal(w http.ResponseWriter, r *http.Request, role string) (
 }
 
 func (s Server) submit(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.principal(w, r, "decision_workload")
+	p, ok := s.principal(w, r, "credit_application_writer")
 	if !ok || p.TenantID == "" {
 		if ok {
 			write(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
@@ -155,10 +167,19 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 		Amount          int64  `json:"amount_minor"`
 		TermDays        int    `json:"term_days"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&in) != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(key) < 16 || len(key) > 128 || p.ApplicationID == "" || p.Environment == "" || p.Subject == "" {
+		write(w, 400, map[string]string{"error": "application_identity_and_idempotency_key_required"})
+		return
+	}
+	encoded, _ := json.Marshal(in)
+	requestHash := sha256.Sum256(encoded)
 	ctx := product.WithBearerToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	input := creditrisk.Application{ID: newID("cap"), Environment: p.Environment, TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}
 	if r.URL.Path == "/v1/credit/application-drafts" {
@@ -185,6 +206,7 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 		write(w, 201, d)
 		return
 	}
+	ctx = creditrisk.WithSubmissionIdentity(ctx, creditrisk.SubmissionIdentity{TenantID: p.TenantID, Environment: p.Environment, CallerApplicationID: p.ApplicationID, Key: key, Hash: hex.EncodeToString(requestHash[:])})
 	a, err := s.Credit.Submit(ctx, input, p.Subject)
 	if err != nil {
 		draftError(w, err)
@@ -198,9 +220,8 @@ func (s Server) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a, err := s.Applications.Application(r.Context(), r.PathValue("id"))
-	if err != nil || a.TenantID != p.TenantID {
-		write(w, 404, map[string]string{"error": "not_found"})
+	a, ok := s.tenantApplication(w, r, p)
+	if !ok {
 		return
 	}
 	write(w, 200, a)
@@ -209,19 +230,42 @@ func (s Server) get(w http.ResponseWriter, r *http.Request) {
 // accept records a tenant's acceptance of an existing offer. It does not
 // reserve money, disburse, create an LMS loan, or post to a ledger.
 func (s Server) accept(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.principal(w, r, "decision_workload")
+	p, ok := s.principal(w, r, "credit_application_writer")
 	if !ok {
 		return
 	}
-	a, err := s.Applications.Application(r.Context(), r.PathValue("id"))
-	if err != nil || a.TenantID != p.TenantID {
-		write(w, 404, map[string]string{"error": "not_found"})
+	a, ok := s.tenantApplication(w, r, p)
+	if !ok {
 		return
 	}
-	a, err = s.Credit.Accept(r.Context(), a.ID, p.Subject)
-	if err != nil {
-		write(w, 422, map[string]string{"error": "acceptance_rejected"})
+	var input struct {
+		QuoteID          string `json:"quote_id"`
+		ConsentReference string `json:"consent_reference"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF || len(key) < 16 || len(key) > 128 || strings.TrimSpace(input.QuoteID) == "" || len(input.QuoteID) > 128 || strings.TrimSpace(input.ConsentReference) == "" || len(input.ConsentReference) > 256 || p.ApplicationID == "" {
+		write(w, 400, map[string]string{"error": "quote_consent_application_and_idempotency_key_required"})
 		return
+	}
+	a, replayed, err := s.Credit.AcceptIdempotent(r.Context(), a, p.Subject, creditrisk.AcceptanceRequest{TenantID: p.TenantID, Environment: p.Environment, CallerApplicationID: p.ApplicationID, Key: key, QuoteID: input.QuoteID, ConsentReference: input.ConsentReference})
+	if err != nil {
+		status, code := 503, "acceptance_unavailable"
+		if errors.Is(err, creditrisk.ErrInvalidState) {
+			status, code = 409, "offer_state_or_quote_conflict"
+		}
+		if errors.Is(err, creditrisk.ErrAcceptanceConflict) {
+			status, code = 409, "idempotency_conflict"
+		}
+		if errors.Is(err, creditrisk.ErrNotFound) {
+			status, code = 404, "not_found"
+		}
+		write(w, status, map[string]string{"error": code})
+		return
+	}
+	if replayed {
+		w.Header().Set("Idempotent-Replayed", "true")
 	}
 	write(w, http.StatusOK, a)
 }

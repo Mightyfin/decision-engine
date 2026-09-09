@@ -69,7 +69,8 @@ func (s Postgres) UpdateDraft(ctx context.Context, d creditrisk.Draft, expected 
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		var status string
 		var revision int
-		err := tx.QueryRow(ctx, `SELECT a.status,d.revision FROM credit_applications a JOIN credit_application_drafts d ON d.application_id=a.id JOIN credit_application_environments e ON e.application_id=a.id WHERE a.id=$1 AND a.tenant_id=$2 AND e.environment=$3 FOR UPDATE OF a,d`, d.Application.ID, d.Application.TenantID, d.Application.Environment).Scan(&status, &revision)
+		var commercialRequired bool
+		err := tx.QueryRow(ctx, `SELECT a.status,d.revision,COALESCE((d.requirements->>'commercial_review_required')::boolean,false) FROM credit_applications a JOIN credit_application_drafts d ON d.application_id=a.id JOIN credit_application_environments e ON e.application_id=a.id WHERE a.id=$1 AND a.tenant_id=$2 AND e.environment=$3 FOR UPDATE OF a,d`, d.Application.ID, d.Application.TenantID, d.Application.Environment).Scan(&status, &revision, &commercialRequired)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return creditrisk.ErrNotFound
 		}
@@ -78,6 +79,11 @@ func (s Postgres) UpdateDraft(ctx context.Context, d creditrisk.Draft, expected 
 		}
 		if (status != "draft" && (submit || status != "awaiting_information")) || revision != expected {
 			return creditrisk.ErrInvalidState
+		}
+		if submit && commercialRequired {
+			if err := commercialApproved(ctx, tx, d.Application.ID, expected); err != nil {
+				return err
+			}
 		}
 		raw, err := json.Marshal(d.Answers)
 		if err != nil {

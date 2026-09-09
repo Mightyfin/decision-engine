@@ -62,6 +62,19 @@ func (s Postgres) ChangeInformationState(ctx context.Context, id, tenant, enviro
 		if err = checkReviewVersion(ctx, tx, id, version); err != nil {
 			return err
 		}
+		if resubmit {
+			var revision int
+			var required bool
+			err = tx.QueryRow(ctx, `SELECT revision,COALESCE((requirements->>'commercial_review_required')::boolean,false) FROM credit_application_drafts WHERE application_id=$1`, id).Scan(&revision, &required)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if required {
+				if err = commercialApproved(ctx, tx, id, revision); err != nil {
+					return err
+				}
+			}
+		}
 		if _, err = tx.Exec(ctx, `UPDATE credit_applications SET status=$2 WHERE id=$1`, id, to); err != nil {
 			return err
 		}

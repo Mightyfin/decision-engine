@@ -95,6 +95,10 @@ func (s Server) information(w http.ResponseWriter, r *http.Request) {
 	}
 	err = store.ChangeInformationState(r.Context(), id, tenant, p.Environment, p.Subject, in.Reason, in.Revision, !staff)
 	if err != nil {
+		if errors.Is(err, creditrisk.ErrCommercialReviewRequired) {
+			write(w, 409, map[string]string{"error": "commercial_review_required"})
+			return
+		}
 		status := 503
 		if errors.Is(err, creditrisk.ErrInvalidState) {
 			status = 409

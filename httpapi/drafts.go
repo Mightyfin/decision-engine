@@ -81,6 +81,16 @@ func draftError(w http.ResponseWriter, err error) {
 	}
 	status, code := 422, "validation_failed"
 	switch {
+	case errors.Is(err, creditrisk.ErrCommercialReviewRequired):
+		status, code = 409, "commercial_review_required"
+	case errors.Is(err, product.ErrUnavailable):
+		status, code = 503, "product_engine_unavailable"
+	case errors.Is(err, product.ErrAccessDenied):
+		status, code = 403, "product_access_denied"
+	case errors.Is(err, product.ErrNotFound):
+		status, code = 404, "product_not_found"
+	case errors.Is(err, creditrisk.ErrSubmissionUnavailable):
+		status, code = 503, "submission_unavailable"
 	case errors.Is(err, creditrisk.ErrDraftKeyConflict):
 		status, code = 409, "idempotency_conflict"
 	case errors.Is(err, creditrisk.ErrDraftRequired):

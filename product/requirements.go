@@ -9,15 +9,17 @@ import (
 // Wire contract owned/configured by Product Engine. Decision Engine interprets
 // this snapshot; it does not invent product-specific questions or documents.
 type Field struct {
-	Key      string   `json:"key"`
-	Label    string   `json:"label"`
-	Type     string   `json:"type"`
-	Required bool     `json:"required"`
-	Options  []string `json:"options,omitempty"`
+	Key         string   `json:"key"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"`
+	Required    bool     `json:"required"`
+	RequireTrue bool     `json:"require_true,omitempty"`
+	Options     []string `json:"options,omitempty"`
 }
 type Requirements struct {
-	Fields                []Field  `json:"fields"`
-	RequiredDocumentTypes []string `json:"required_document_types"`
+	CommercialReviewRequired bool     `json:"commercial_review_required,omitempty"`
+	Fields                   []Field  `json:"fields"`
+	RequiredDocumentTypes    []string `json:"required_document_types"`
 }
 type Completion struct {
 	Complete         bool     `json:"complete"`
@@ -59,7 +61,7 @@ func (r Requirements) Check(answers map[string]json.RawMessage, documents []stri
 			missing = true
 		}
 		if missing {
-			if f.Required {
+			if f.Required || f.RequireTrue {
 				c.MissingFields = append(c.MissingFields, f.Key)
 			}
 			continue
@@ -77,10 +79,13 @@ func (r Requirements) Check(answers map[string]json.RawMessage, documents []stri
 			valid = json.Unmarshal(raw, &text) == nil && has(f.Options, text)
 		case "boolean":
 			var v bool
-			valid = json.Unmarshal(raw, &v) == nil
+			valid = json.Unmarshal(raw, &v) == nil && (!f.RequireTrue || v)
 		case "number":
 			var v float64
 			valid = json.Unmarshal(raw, &v) == nil
+		}
+		if f.RequireTrue && (f.Type != "boolean" || !f.Required) {
+			valid = false
 		}
 		if !valid {
 			c.InvalidFields = append(c.InvalidFields, f.Key)

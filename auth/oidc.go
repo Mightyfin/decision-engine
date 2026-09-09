@@ -57,6 +57,8 @@ func (v *OIDCVerifier) Authenticate(r *http.Request) (httpapi.Principal, error) 
 	}
 	for _, scope := range strings.Fields(c.Scope) {
 		switch scope {
+		case "credit:commercial:write":
+			roles["credit_commercial_reviewer"] = c.ApplicationID != ""
 		case "credit:evidence:write":
 			roles["credit_evidence_writer"] = c.ApplicationID != "" || roles["tenant_owner"] || roles["tenant_admin"] || roles["tenant_credit_operator"]
 		case "decision:submit", "credit:write":

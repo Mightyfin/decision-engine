@@ -2,6 +2,7 @@ package product
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,6 +20,36 @@ func TestHTTPStoreMapsActiveLoanProduct(t *testing.T) {
 	p, err := (HTTPStore{BaseURL: server.URL}).Policy(WithBearerToken(context.Background(), "test-token"), "ten_1", "prd_1")
 	if err != nil || p.Version != 2 || p.Currency != "ZMW" || p.MinimumAmount != 10000 || p.GraceDays != 3 {
 		t.Fatalf("unexpected policy %#v error=%v", p, err)
+	}
+}
+
+func TestHTTPStoreRejectsRedirectWithoutSendingToken(t *testing.T) {
+	called := false
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true; w.WriteHeader(200) }))
+	defer destination.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, destination.URL, 307) }))
+	defer source.Close()
+	_, err := (HTTPStore{BaseURL: source.URL}).Policy(WithBearerToken(context.Background(), "test-token"), "t", "p")
+	if !errors.Is(err, ErrUnavailable) || called {
+		t.Fatal("credential redirect followed", called, err)
+	}
+}
+
+func TestHTTPStoreSeparatesFailureFromValidation(t *testing.T) {
+	for _, status := range []int{401, 403, 404, 500, 503} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+		_, err := (HTTPStore{BaseURL: server.URL}).Policy(WithBearerToken(context.Background(), "token"), "t", "p")
+		server.Close()
+		want := ErrUnavailable
+		if status == 401 || status == 403 {
+			want = ErrAccessDenied
+		}
+		if status == 404 {
+			want = ErrNotFound
+		}
+		if !errors.Is(err, want) {
+			t.Fatal(status, err)
+		}
 	}
 }
 

@@ -21,3 +21,22 @@ func TestCompletionDoesNotTreatFalseOrZeroAsMissing(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func TestConfiguredAffirmativeAttestation(t *testing.T) {
+	r := Requirements{Fields: []Field{{Key: "authority", Type: "boolean", Required: true, RequireTrue: true}}}
+	for _, raw := range []string{"null", "false", `"true"`, "1", "{}"} {
+		if c := r.Check(map[string]json.RawMessage{"authority": json.RawMessage(raw)}, nil); c.Complete {
+			t.Fatalf("non-affirmative attestation accepted: %s", raw)
+		}
+	}
+	if r.Check(nil, nil).Complete {
+		t.Fatal("missing attestation accepted")
+	}
+	if !r.Check(map[string]json.RawMessage{"authority": json.RawMessage("true")}, nil).Complete {
+		t.Fatal("affirmative attestation rejected")
+	}
+	r.Fields[0].Required = false
+	if r.Check(map[string]json.RawMessage{"authority": json.RawMessage("true")}, nil).Complete {
+		t.Fatal("malformed constraint accepted")
+	}
+}

@@ -48,6 +48,8 @@ func TestSignedWorkloadPermissions(t *testing.T) {
 	}{
 		{"read only", "credit:read", "app_a", "sandbox", "decision-test", false, false, false},
 		{"write", "credit:write", "app_a", "sandbox", "decision-test", false, false, true},
+		{"commercial review", "credit:commercial:write", "app_a", "sandbox", "decision-test", false, false, false},
+		{"human cannot claim workload review", "credit:commercial:write", "", "sandbox", "decision-test", false, false, false},
 		{"human cannot draft", "credit:write", "", "sandbox", "decision-test", false, false, false},
 		{"wrong environment", "credit:write", "app_a", "production", "decision-test", false, true, false},
 		{"wrong audience", "credit:write", "app_a", "sandbox", "other", false, true, false},
@@ -78,6 +80,9 @@ func TestSignedWorkloadPermissions(t *testing.T) {
 			}
 			if err != nil || p.ApplicationID != tc.app || p.TenantID != "tenant_a" || p.Roles["credit_application_writer"] != tc.writer {
 				t.Fatal("claims/permissions mismatch", p, err)
+			}
+			if p.Roles["credit_commercial_reviewer"] != (tc.scope == "credit:commercial:write" && tc.app != "") {
+				t.Fatal("commercial review scope escalation", p)
 			}
 		})
 	}

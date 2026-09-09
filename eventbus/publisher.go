@@ -18,13 +18,20 @@ type envelope struct {
 	Version     string          `json:"version"`
 	OccurredAt  time.Time       `json:"occurred_at"`
 	TenantID    string          `json:"tenant_id"`
+	Environment string          `json:"environment"`
 	AggregateID string          `json:"aggregate_id"`
 	Data        json.RawMessage `json:"data"`
 }
 
-type Publisher struct{ js nats.JetStreamContext }
+type Publisher struct {
+	js          nats.JetStreamContext
+	environment string
+}
 
-func NewPublisher(url, token string) (*Publisher, func(), error) {
+func NewPublisher(url, token, environment string) (*Publisher, func(), error) {
+	if !validEnvironment(environment) {
+		return nil, nil, fmt.Errorf("explicit event environment required")
+	}
 	options := []nats.Option{nats.Name("decision-engine-outbox-publisher")}
 	if token != "" {
 		options = append(options, nats.Token(token))
@@ -38,7 +45,7 @@ func NewPublisher(url, token string) (*Publisher, func(), error) {
 		nc.Close()
 		return nil, nil, err
 	}
-	return &Publisher{js: js}, nc.Close, nil
+	return &Publisher{js: js, environment: environment}, nc.Close, nil
 }
 
 func (p *Publisher) EnsureStream(ctx context.Context) error {
@@ -54,14 +61,31 @@ func (p *Publisher) EnsureStream(ctx context.Context) error {
 }
 
 func (p *Publisher) Publish(ctx context.Context, event Event) error {
+	if !validEnvironment(p.environment) {
+		return fmt.Errorf("explicit event environment required")
+	}
+	var scope struct {
+		Environment string `json:"environment"`
+	}
+	if json.Unmarshal(event.Payload, &scope) != nil || (scope.Environment != "" && scope.Environment != p.environment) {
+		return fmt.Errorf("event environment mismatch")
+	}
 	data, err := json.Marshal(envelope{
 		ID: fmt.Sprintf("decision-outbox-%d", event.ID), Type: event.Type, Version: "1",
-		OccurredAt: event.OccurredAt.UTC(), TenantID: event.TenantID, AggregateID: event.AggregateID, Data: event.Payload,
+		OccurredAt: event.OccurredAt.UTC(), TenantID: event.TenantID, Environment: p.environment, AggregateID: event.AggregateID, Data: event.Payload,
 	})
 	if err != nil {
 		return err
 	}
 	subject := "mightyfin.decision." + strings.ReplaceAll(event.Type, " ", "-")
-	_, err = p.js.Publish(subject, data, nats.MsgId(fmt.Sprintf("decision-outbox-%d", event.ID)), nats.Context(ctx))
+	_, err = p.js.Publish(subject, data, nats.MsgId(fmt.Sprintf("%s:decision-outbox-%d", p.environment, event.ID)), nats.Context(ctx))
 	return err
+}
+
+func validEnvironment(v string) bool {
+	switch v {
+	case "local", "dev", "staging", "sandbox", "production":
+		return true
+	}
+	return false
 }

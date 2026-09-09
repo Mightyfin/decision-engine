@@ -143,6 +143,19 @@ func (s Service) SubmitDraft(ctx context.Context, id, tenant, environment, actor
 	if !c.Complete {
 		return Draft{}, IncompleteError{c}
 	}
+	if d.Requirements.CommercialReviewRequired {
+		reviews, ok := s.Store.(CommercialReviewStore)
+		if !ok {
+			return Draft{}, ErrCommercialReviewRequired
+		}
+		review, err := reviews.CommercialReview(ctx, id, SubmissionIdentity{TenantID: tenant, Environment: environment, CallerApplicationID: d.CallerApplicationID})
+		if err != nil {
+			return Draft{}, err
+		}
+		if review.Decision != "approved" || review.Revision != revision {
+			return Draft{}, ErrCommercialReviewRequired
+		}
+	}
 	d.Application.Status = "pending_review"
 	d.Application.SubmittedAt = s.now()
 	d.Revision++

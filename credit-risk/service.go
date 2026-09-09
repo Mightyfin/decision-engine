@@ -106,17 +106,42 @@ func (s Service) now() time.Time {
 	return time.Now().UTC()
 }
 func (s Service) Submit(ctx context.Context, a Application, actor string) (Application, error) {
+	identity, idempotent := ctx.Value(submissionContextKey{}).(SubmissionIdentity)
+	var durable SubmissionStore
+	if idempotent {
+		var ok bool
+		durable, ok = s.Store.(SubmissionStore)
+		if !ok {
+			return Application{}, ErrSubmissionUnavailable
+		}
+		if identity.TenantID != a.TenantID || identity.Environment != a.Environment || actor == "" {
+			return Application{}, ErrInvalidState
+		}
+		if previous, found, err := durable.SubmissionReplay(ctx, identity); err != nil || found {
+			if err != nil && !errors.Is(err, ErrDraftKeyConflict) {
+				err = errors.Join(ErrSubmissionUnavailable, err)
+			}
+			return previous, err
+		}
+	}
 	a, p, err := s.prepareApplication(ctx, a)
 	if err != nil {
 		return Application{}, err
 	}
 	r := p.RequirementsFor(a.ApplicantRole)
-	if len(r.Fields) > 0 || len(r.RequiredDocumentTypes) > 0 {
+	if len(r.Fields) > 0 || len(r.RequiredDocumentTypes) > 0 || r.CommercialReviewRequired {
 		return Application{}, ErrDraftRequired
 	}
 	a.Status = "pending_review"
 	a.SubmittedAt = s.now()
 	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: "submitted", Reason: "application submitted", At: s.now()}
+	if idempotent {
+		result, err := durable.CreateSubmission(ctx, a, audit, identity)
+		if err != nil && !errors.Is(err, ErrDraftKeyConflict) && !errors.Is(err, ErrInvalidState) {
+			err = errors.Join(ErrSubmissionUnavailable, err)
+		}
+		return result, err
+	}
 	if store, ok := s.Store.(AtomicStore); ok {
 		return a, store.CreateApplication(ctx, a, audit)
 	}

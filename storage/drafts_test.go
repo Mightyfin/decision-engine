@@ -158,7 +158,7 @@ func TestDraftLifecycle(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM credit_decision_audit WHERE application_id=$1 AND action='submitted'`, a.ID).Scan(&count); err != nil || count != 1 {
 		t.Fatal("submission audit", count, err)
 	}
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM credit_outbox WHERE aggregate_id=$1`, a.ID).Scan(&count); err != nil || count != 0 {
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM credit_outbox WHERE aggregate_id=$1 AND event_type='credit.offer.accepted'`, a.ID).Scan(&count); err != nil || count != 0 {
 		t.Fatal("unexpected funding handoff", count, err)
 	}
 	reviewVersion, err := store.ReviewRevision(ctx, a.TenantID, a.ID)

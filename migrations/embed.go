@@ -43,6 +43,24 @@ var informationRequests string
 //go:embed 00011_application_drafts.sql
 var applicationDrafts string
 
+//go:embed 00012_tenant_discovery.sql
+var tenantDiscovery string
+
+//go:embed 00013_offer_acceptance_replay.sql
+var offerAcceptanceReplay string
+
+//go:embed 00014_submission_replay.sql
+var submissionReplay string
+
+//go:embed 00015_application_action_replay.sql
+var applicationActionReplay string
+
+//go:embed 00016_submission_ownership.sql
+var submissionOwnership string
+
+//go:embed 00017_commercial_review.sql
+var commercialReview string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -77,7 +95,25 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00010_information_requests", informationRequests); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00011_application_drafts", applicationDrafts)
+	if err := apply(ctx, pool, "00011_application_drafts", applicationDrafts); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00012_tenant_discovery", tenantDiscovery); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00013_offer_acceptance_replay", offerAcceptanceReplay); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00014_submission_replay", submissionReplay); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00015_application_action_replay", applicationActionReplay); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00016_submission_ownership", submissionOwnership); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00017_commercial_review", commercialReview)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

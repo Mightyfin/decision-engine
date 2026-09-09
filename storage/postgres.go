@@ -67,7 +67,7 @@ func (s Postgres) RecordDecision(ctx context.Context, a creditrisk.Application, 
 
 func (s Postgres) RecordAcceptance(ctx context.Context, a creditrisk.Application, audit creditrisk.Audit) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
-		if err := saveApplication(ctx, tx, a); err != nil {
+		if err := acceptApplication(ctx, tx, a, ""); err != nil {
 			return err
 		}
 		return appendAudit(ctx, tx, audit)
@@ -75,48 +75,70 @@ func (s Postgres) RecordAcceptance(ctx context.Context, a creditrisk.Application
 }
 func (s Postgres) RecordAcceptanceWithEvent(ctx context.Context, a creditrisk.Application, audit creditrisk.Audit, offer creditrisk.Offer) error {
 	return s.withTx(ctx, func(tx pgx.Tx) error {
-		if err := saveApplication(ctx, tx, a); err != nil {
-			return err
-		}
-		if err := appendAudit(ctx, tx, audit); err != nil {
-			return err
-		}
-		// This is a handoff fact, not a disbursement instruction.  Consumers may
-		// create an operational funding case, but must apply their own controls
-		// before reserving funds, posting to a ledger, or creating a loan.
-		payload, err := json.Marshal(map[string]any{
-			"application_id":          a.ID,
-			"tenant_id":               a.TenantID,
-			"offer_quote_id":          offer.QuoteID,
-			"relationship_id":         a.RelationshipID,
-			"party_id":                a.PartyID,
-			"applicant_role":          a.ApplicantRole,
-			"wallet_id":               a.WalletID,
-			"origin":                  a.Origin,
-			"product_policy_id":       a.ProductPolicyID,
-			"product_policy_version":  offer.ProductPolicyVersion,
-			"pricing_policy_version":  offer.PricingPolicyVersion,
-			"currency":                a.Currency,
-			"principal_minor":         offer.Principal,
-			"interest_minor":          offer.Interest,
-			"fees_minor":              offer.Fees,
-			"total_minor":             offer.Total,
-			"term_days":               offer.TermDays,
-			"installment_count":       offer.InstallmentCount,
-			"repayment_interval_days": offer.RepaymentIntervalDays,
-			"grace_days":              offer.GraceDays,
-			"penalty_rate_bps":        offer.PenaltyRateBPS,
-			"penalty_basis":           offer.PenaltyBasis,
-			"penalty_cap_bps":         offer.PenaltyCapBPS,
-			"allocation_order":        offer.AllocationOrder,
-			"offer_expires_at":        offer.ExpiresAt.UTC().Format(time.RFC3339Nano),
-		})
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO credit_outbox(event_type,aggregate_id,tenant_id,payload,occurred_at) VALUES('credit.offer.accepted',$1,$2,$3,$4)`, a.ID, a.TenantID, payload, audit.At)
-		return err
+		return recordAcceptanceWithEvent(ctx, tx, a, audit, offer)
 	})
+}
+
+func recordAcceptanceWithEvent(ctx context.Context, tx pgx.Tx, a creditrisk.Application, audit creditrisk.Audit, offer creditrisk.Offer) error {
+	if err := acceptApplication(ctx, tx, a, offer.QuoteID); err != nil {
+		return err
+	}
+	if err := appendAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	// This is a handoff fact, not a disbursement instruction.  Consumers may
+	// create an operational funding case, but must apply their own controls
+	// before reserving funds, posting to a ledger, or creating a loan.
+	payload, err := json.Marshal(map[string]any{
+		"application_id":          a.ID,
+		"tenant_id":               a.TenantID,
+		"offer_quote_id":          offer.QuoteID,
+		"relationship_id":         a.RelationshipID,
+		"party_id":                a.PartyID,
+		"applicant_role":          a.ApplicantRole,
+		"wallet_id":               a.WalletID,
+		"origin":                  a.Origin,
+		"product_policy_id":       a.ProductPolicyID,
+		"product_policy_version":  offer.ProductPolicyVersion,
+		"pricing_policy_version":  offer.PricingPolicyVersion,
+		"currency":                a.Currency,
+		"principal_minor":         offer.Principal,
+		"interest_minor":          offer.Interest,
+		"fees_minor":              offer.Fees,
+		"total_minor":             offer.Total,
+		"term_days":               offer.TermDays,
+		"installment_count":       offer.InstallmentCount,
+		"repayment_interval_days": offer.RepaymentIntervalDays,
+		"grace_days":              offer.GraceDays,
+		"penalty_rate_bps":        offer.PenaltyRateBPS,
+		"penalty_basis":           offer.PenaltyBasis,
+		"penalty_cap_bps":         offer.PenaltyCapBPS,
+		"allocation_order":        offer.AllocationOrder,
+		"offer_expires_at":        offer.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO credit_outbox(event_type,aggregate_id,tenant_id,payload,occurred_at) VALUES('credit.offer.accepted',$1,$2,$3,$4)`, a.ID, a.TenantID, payload, audit.At)
+	return err
+}
+
+// Conditional transition prevents concurrent acceptances from duplicating the
+// audit/outbox or overwriting a newer decision using an earlier application read.
+func acceptApplication(ctx context.Context, tx pgx.Tx, a creditrisk.Application, quote string) error {
+	if a.Status != "accepted" {
+		return creditrisk.ErrInvalidState
+	}
+	tag, err := tx.Exec(ctx, `UPDATE credit_applications a SET status='accepted'
+	 WHERE a.id=$1 AND a.tenant_id=$2 AND a.status='offered'
+	 AND EXISTS(SELECT 1 FROM credit_offers o WHERE o.application_id=a.id AND o.expires_at>clock_timestamp() AND ($3='' OR o.quote_id=$3))`, a.ID, a.TenantID, quote)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return creditrisk.ErrInvalidState
+	}
+	return nil
 }
 
 func (s Postgres) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
@@ -216,5 +238,8 @@ func appendAudit(ctx context.Context, db sqlExecutor, a creditrisk.Audit) error 
 		a.At = time.Now().UTC()
 	}
 	_, err := db.Exec(ctx, `INSERT INTO credit_decision_audit(application_id,actor,action,reason,created_at) VALUES($1,$2,$3,$4,$5)`, a.ApplicationID, a.Actor, a.Action, a.Reason, a.At)
-	return err
+	if err != nil {
+		return err
+	}
+	return appendTenantStatusEvent(ctx, db, a)
 }

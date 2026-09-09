@@ -3,7 +3,9 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +13,9 @@ import (
 )
 
 type tokenContextKey struct{}
+
+var ErrUnavailable = errors.New("product engine unavailable")
+var ErrAccessDenied = errors.New("product access denied")
 
 func WithBearerToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, tokenContextKey{}, strings.TrimSpace(token))
@@ -24,27 +29,33 @@ type HTTPStore struct {
 func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, error) {
 	token, _ := ctx.Value(tokenContextKey{}).(string)
 	if token == "" {
-		return Policy{}, fmt.Errorf("product access token unavailable")
+		return Policy{}, ErrAccessDenied
 	}
 	client := s.Client
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
+	copyClient := *client
+	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client = &copyClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(s.BaseURL, "/")+"/v1/products/"+url.PathEscape(id), nil)
 	if err != nil {
-		return Policy{}, err
+		return Policy{}, errors.Join(ErrUnavailable, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	res, err := client.Do(req)
 	if err != nil {
-		return Policy{}, err
+		return Policy{}, errors.Join(ErrUnavailable, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode == 404 {
 		return Policy{}, ErrNotFound
 	}
+	if res.StatusCode == 401 || res.StatusCode == 403 {
+		return Policy{}, ErrAccessDenied
+	}
 	if res.StatusCode != 200 {
-		return Policy{}, fmt.Errorf("product engine returned %d", res.StatusCode)
+		return Policy{}, fmt.Errorf("%w: status %d", ErrUnavailable, res.StatusCode)
 	}
 	var out struct {
 		ID            string `json:"id"`
@@ -70,8 +81,8 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 			} `json:"configuration"`
 		} `json:"version"`
 	}
-	if err = json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return Policy{}, err
+	if err = json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(&out); err != nil {
+		return Policy{}, errors.Join(ErrUnavailable, err)
 	}
 	if out.ID != id || out.TenantID != tenantID || out.Lifecycle != "active" || out.Version == nil || out.ActiveVersion == nil || *out.ActiveVersion != out.Version.Version {
 		return Policy{}, ErrNotFound

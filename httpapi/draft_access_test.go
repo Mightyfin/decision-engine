@@ -13,6 +13,10 @@ type guardedDraftStore struct {
 	calls int
 }
 
+func (s *guardedDraftStore) EvidenceApplication(ctx context.Context, id string) (creditrisk.Application, error) {
+	return s.Application(ctx, id)
+}
+
 func (s *guardedDraftStore) CheckDraftCaller(_ context.Context, id, tenant, environment, caller string) error {
 	s.calls++
 	if id != "a" || tenant != "t" || environment != "sandbox" || caller != "app_a" {
@@ -22,7 +26,7 @@ func (s *guardedDraftStore) CheckDraftCaller(_ context.Context, id, tenant, envi
 }
 func TestDraftWorkloadIsolationAlsoProtectsApplicationRead(t *testing.T) {
 	for _, app := range []string{"app_a", "app_b"} {
-		s := &guardedDraftStore{testStore: testStore{applications: map[string]creditrisk.Application{"a": {ID: "a", TenantID: "t"}}}}
+		s := &guardedDraftStore{testStore: testStore{applications: map[string]creditrisk.Application{"a": {ID: "a", TenantID: "t", Environment: "sandbox"}}}}
 		w := httptest.NewRecorder()
 		Server{Auth: testAuth{Principal{TenantID: "t", Environment: "sandbox", ApplicationID: app, Roles: map[string]bool{"decision_workload": true}}}, Applications: s}.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/v1/credit/applications/a", nil))
 		want := 200
@@ -35,7 +39,7 @@ func TestDraftWorkloadIsolationAlsoProtectsApplicationRead(t *testing.T) {
 	}
 }
 func TestReadOnlyWorkloadCannotMutateDraft(t *testing.T) {
-	for _, methodPath := range [][2]string{{"POST", "/v1/credit/application-drafts"}, {"PUT", "/v1/credit/applications/a/draft"}, {"POST", "/v1/credit/applications/a/submit"}} {
+	for _, methodPath := range [][2]string{{"POST", "/v1/credit/applications"}, {"POST", "/v1/credit/application-drafts"}, {"PUT", "/v1/credit/applications/a/draft"}, {"POST", "/v1/credit/applications/a/submit"}} {
 		p := Principal{Subject: "client", TenantID: "t", Environment: "sandbox", ApplicationID: "app_a", Roles: map[string]bool{"decision_workload": true}}
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(methodPath[0], methodPath[1], strings.NewReader(`{}`))
