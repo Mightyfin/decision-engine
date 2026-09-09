@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,25 @@ func TestHTTPStoreMapsActiveLoanProduct(t *testing.T) {
 	p, err := (HTTPStore{BaseURL: server.URL}).Policy(WithBearerToken(context.Background(), "test-token"), "ten_1", "prd_1")
 	if err != nil || p.Version != 2 || p.Currency != "ZMW" || p.MinimumAmount != 10000 || p.GraceDays != 3 {
 		t.Fatalf("unexpected policy %#v error=%v", p, err)
+	}
+}
+
+func TestHTTPStoreRejectsNonCreditFamiliesAndInvalidFraming(t *testing.T) {
+	valid := `{"id":"prd_1","tenant_id":"ten_1","family":"term_loan","lifecycle":"active","active_version":1,"version":{"version":1,"currency":"ZMW","configuration":{}}}`
+	for _, raw := range []string{
+		strings.Replace(valid, "term_loan", "wallet_transfer", 1),
+		strings.Replace(valid, "term_loan", "wallet_cash_in", 1),
+		strings.Replace(valid, "term_loan", "wallet_cash_out", 1),
+		strings.Replace(valid, "term_loan", "", 1),
+		valid + ` {"extra":true}`,
+		valid + strings.Repeat(" ", 2<<20),
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(raw)) }))
+		_, err := (HTTPStore{BaseURL: server.URL}).Policy(WithBearerToken(context.Background(), "token"), "ten_1", "prd_1")
+		server.Close()
+		if err == nil {
+			t.Fatal("invalid product response accepted")
+		}
 	}
 }
 

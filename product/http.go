@@ -81,10 +81,19 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 			} `json:"configuration"`
 		} `json:"version"`
 	}
-	if err = json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(&out); err != nil {
+	body, err := io.ReadAll(io.LimitReader(res.Body, (2<<20)+1))
+	if err != nil || len(body) > 2<<20 {
+		return Policy{}, ErrUnavailable
+	}
+	if err = json.Unmarshal(body, &out); err != nil {
 		return Policy{}, errors.Join(ErrUnavailable, err)
 	}
 	if out.ID != id || out.TenantID != tenantID || out.Lifecycle != "active" || out.Version == nil || out.ActiveVersion == nil || *out.ActiveVersion != out.Version.Version {
+		return Policy{}, ErrNotFound
+	}
+	switch out.Family {
+	case "term_loan", "salary_advance", "purchase_order_finance", "invoice_finance", "supplier_finance", "inventory_finance":
+	default:
 		return Policy{}, ErrNotFound
 	}
 	c := out.Version.Configuration
