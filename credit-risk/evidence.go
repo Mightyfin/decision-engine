@@ -50,7 +50,7 @@ func (s EvidenceService) Bind(ctx context.Context, id, tenant, environment, acto
 	if a.Environment == "" || a.Environment != environment || a.PartyID == "" || a.RelationshipID == "" || a.AssessmentContext().Scenario == "unclassified" {
 		return ErrEvidenceScope
 	}
-	if a.Status != "pending_review" && a.Status != "awaiting_information" {
+	if a.Status != "draft" && a.Status != "pending_review" && a.Status != "awaiting_information" {
 		return ErrInvalidState
 	}
 	if s.Verifier == nil {

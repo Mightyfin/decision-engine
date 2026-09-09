@@ -38,7 +38,7 @@ type Application struct {
 	RepaymentIntervalDays int       `json:"repayment_interval_days"`
 	GraceDays             int       `json:"grace_days"`
 	AllocationOrder       []string  `json:"allocation_order"`
-	SubmittedAt           time.Time `json:"submitted_at"`
+	SubmittedAt           time.Time `json:"submitted_at,omitzero"`
 }
 type Offer struct {
 	ApplicationID         string    `json:"application_id"`
@@ -106,30 +106,15 @@ func (s Service) now() time.Time {
 	return time.Now().UTC()
 }
 func (s Service) Submit(ctx context.Context, a Application, actor string) (Application, error) {
-	p, err := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays, a.ApplicantRole)
+	a, p, err := s.prepareApplication(ctx, a)
 	if err != nil {
 		return Application{}, err
 	}
-	if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.RelationshipID) == "" || strings.TrimSpace(a.Purpose) == "" {
-		return Application{}, fmt.Errorf("application identity, relationship and purpose are required")
-	}
-	if a.ApplicantRole != "" && a.ApplicantRole != "network_participant" && a.ApplicantRole != "partner_organisation" {
-		return Application{}, fmt.Errorf("unsupported applicant role")
-	}
-	if a.PartyID != "" && a.ApplicantRole == "" {
-		return Application{}, fmt.Errorf("party identity requires an applicant role")
-	}
-	if a.Origin == "" {
-		a.Origin = "legacy"
-	}
-	if !originPattern.MatchString(a.Origin) {
-		return Application{}, fmt.Errorf("unsupported credit origin")
+	r := p.RequirementsFor(a.ApplicantRole)
+	if len(r.Fields) > 0 || len(r.RequiredDocumentTypes) > 0 {
+		return Application{}, ErrDraftRequired
 	}
 	a.Status = "pending_review"
-	a.ProductPolicyVersion = p.Version
-	a.RepaymentIntervalDays = p.RepaymentIntervalDays
-	a.GraceDays = p.GraceDays
-	a.AllocationOrder = append([]string(nil), p.AllocationOrder...)
 	a.SubmittedAt = s.now()
 	audit := Audit{ApplicationID: a.ID, Actor: actor, Action: "submitted", Reason: "application submitted", At: s.now()}
 	if store, ok := s.Store.(AtomicStore); ok {
@@ -139,6 +124,33 @@ func (s Service) Submit(ctx context.Context, a Application, actor string) (Appli
 		return Application{}, err
 	}
 	return a, s.Store.AppendAudit(ctx, audit)
+}
+
+func (s Service) prepareApplication(ctx context.Context, a Application) (Application, product.Policy, error) {
+	p, err := s.Products.Validate(ctx, a.TenantID, a.ProductPolicyID, a.Currency, a.Amount, a.TermDays, a.ApplicantRole)
+	if err != nil {
+		return Application{}, p, err
+	}
+	if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.RelationshipID) == "" || strings.TrimSpace(a.Purpose) == "" {
+		return Application{}, p, fmt.Errorf("application identity, relationship and purpose are required")
+	}
+	if a.ApplicantRole != "" && a.ApplicantRole != "network_participant" && a.ApplicantRole != "partner_organisation" {
+		return Application{}, p, fmt.Errorf("unsupported applicant role")
+	}
+	if a.PartyID != "" && a.ApplicantRole == "" {
+		return Application{}, p, fmt.Errorf("party identity requires an applicant role")
+	}
+	if a.Origin == "" {
+		a.Origin = "legacy"
+	}
+	if !originPattern.MatchString(a.Origin) {
+		return Application{}, p, fmt.Errorf("unsupported credit origin")
+	}
+	a.ProductPolicyVersion = p.Version
+	a.RepaymentIntervalDays = p.RepaymentIntervalDays
+	a.GraceDays = p.GraceDays
+	a.AllocationOrder = append([]string(nil), p.AllocationOrder...)
+	return a, p, nil
 }
 
 // Decide makes no automatic lending decision. A reviewer must supply a non-empty reason.

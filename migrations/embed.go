@@ -40,6 +40,9 @@ var applicationEvidence string
 //go:embed 00010_information_requests.sql
 var informationRequests string
 
+//go:embed 00011_application_drafts.sql
+var applicationDrafts string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -71,7 +74,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00009_application_evidence", applicationEvidence); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00010_information_requests", informationRequests)
+	if err := apply(ctx, pool, "00010_information_requests", informationRequests); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00011_application_drafts", applicationDrafts)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

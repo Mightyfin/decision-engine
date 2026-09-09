@@ -18,6 +18,8 @@ type Policy struct {
 	RepaymentIntervalDays, GraceDays int
 	AllocationOrder                  []string
 	AllowedApplicantRoles            []string
+	RequiredDocumentTypes            []string
+	ApplicationRequirements          map[string]Requirements
 	Active                           bool
 }
 

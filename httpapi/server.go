@@ -4,6 +4,7 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 type Principal struct {
 	Subject, TenantID string
+	ApplicationID     string
 	Environment       string
 	Roles             map[string]bool
 }
@@ -49,6 +51,10 @@ func (s Server) Handler() http.Handler {
 		write(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	m.HandleFunc("POST /v1/credit/applications", s.submit)
+	m.HandleFunc("POST /v1/credit/application-drafts", s.submit)
+	m.HandleFunc("GET /v1/credit/applications/{id}/draft", s.draft)
+	m.HandleFunc("PUT /v1/credit/applications/{id}/draft", s.draft)
+	m.HandleFunc("POST /v1/credit/applications/{id}/submit", s.draft)
 	m.HandleFunc("POST /v1/credit/applications/{id}/evidence", s.bindEvidence)
 	m.HandleFunc("POST /v1/credit/applications/{id}/document-access", s.documentAccess)
 	m.HandleFunc("GET /v1/credit/applications/{id}/information-request", s.information)
@@ -116,6 +122,16 @@ func (s Server) principal(w http.ResponseWriter, r *http.Request, role string) (
 		write(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return p, false
 	}
+	if p.ApplicationID != "" && r.PathValue("id") != "" {
+		if guard, ok := s.Applications.(interface {
+			CheckDraftCaller(context.Context, string, string, string, string) error
+		}); ok {
+			if err := guard.CheckDraftCaller(r.Context(), r.PathValue("id"), p.TenantID, p.Environment, p.ApplicationID); err != nil {
+				write(w, 404, map[string]string{"error": "not_found"})
+				return p, false
+			}
+		}
+	}
 	return p, true
 }
 
@@ -144,9 +160,34 @@ func (s Server) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := product.WithBearerToken(r.Context(), strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	a, err := s.Credit.Submit(ctx, creditrisk.Application{ID: newID("cap"), Environment: p.Environment, TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}, p.Subject)
+	input := creditrisk.Application{ID: newID("cap"), Environment: p.Environment, TenantID: p.TenantID, ProductPolicyID: in.ProductPolicyID, RelationshipID: in.RelationshipID, PartyID: strings.TrimSpace(in.PartyID), ApplicantRole: strings.TrimSpace(in.ApplicantRole), WalletID: strings.TrimSpace(in.WalletID), Origin: strings.TrimSpace(in.Origin), Currency: in.Currency, Purpose: in.Purpose, Amount: in.Amount, TermDays: in.TermDays}
+	if r.URL.Path == "/v1/credit/application-drafts" {
+		if !p.Roles["credit_application_writer"] {
+			write(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+		key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		if key == "" || len(key) > 128 || p.ApplicationID == "" {
+			write(w, 400, map[string]string{"error": "application_identity_and_idempotency_key_required"})
+			return
+		}
+		encoded, _ := json.Marshal(in)
+		hash := sha256.Sum256(encoded)
+		scope, _ := json.Marshal([]string{p.TenantID, p.Environment, p.ApplicationID, key})
+		identity := sha256.Sum256(scope)
+		input.ID = "cap_" + hex.EncodeToString(identity[:])
+		ctx = creditrisk.WithDraftCreation(ctx, p.ApplicationID, hex.EncodeToString(hash[:]))
+		d, err := s.Credit.CreateDraft(ctx, input, p.Subject)
+		if err != nil {
+			draftError(w, err)
+			return
+		}
+		write(w, 201, d)
+		return
+	}
+	a, err := s.Credit.Submit(ctx, input, p.Subject)
 	if err != nil {
-		write(w, 422, map[string]string{"error": "validation_failed"})
+		draftError(w, err)
 		return
 	}
 	write(w, 202, a)

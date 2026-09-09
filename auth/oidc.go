@@ -59,11 +59,14 @@ func (v *OIDCVerifier) Authenticate(r *http.Request) (httpapi.Principal, error) 
 		switch scope {
 		case "credit:evidence:write":
 			roles["credit_evidence_writer"] = c.ApplicationID != "" || roles["tenant_owner"] || roles["tenant_admin"] || roles["tenant_credit_operator"]
-		case "decision:submit", "decision:read", "credit:read", "credit:write":
+		case "decision:submit", "credit:write":
+			roles["credit_application_writer"] = c.ApplicationID != ""
+			roles["decision_workload"] = true
+		case "decision:read", "credit:read":
 			roles["decision_workload"] = true
 		case "decision:review":
 			roles["credit_analyst"] = true
 		}
 	}
-	return httpapi.Principal{Subject: c.Subject, TenantID: c.TenantID, Environment: c.Environment, Roles: roles}, nil
+	return httpapi.Principal{Subject: c.Subject, TenantID: c.TenantID, ApplicationID: c.ApplicationID, Environment: c.Environment, Roles: roles}, nil
 }

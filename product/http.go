@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -29,7 +30,7 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(s.BaseURL, "/")+"/v1/products/"+id, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(s.BaseURL, "/")+"/v1/products/"+url.PathEscape(id), nil)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -56,23 +57,25 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 			Version       int    `json:"version"`
 			Currency      string `json:"currency"`
 			Configuration struct {
-				MinimumAmount         int64    `json:"minimum_amount_minor"`
-				MaximumAmount         int64    `json:"maximum_amount_minor"`
-				MinimumTerm           int      `json:"minimum_term_days"`
-				MaximumTerm           int      `json:"maximum_term_days"`
-				RepaymentIntervalDays int      `json:"repayment_interval_days"`
-				GraceDays             int      `json:"grace_days"`
-				AllocationOrder       []string `json:"allocation_order"`
-				AllowedApplicantRoles []string `json:"allowed_applicant_roles"`
+				MinimumAmount           int64                   `json:"minimum_amount_minor"`
+				MaximumAmount           int64                   `json:"maximum_amount_minor"`
+				MinimumTerm             int                     `json:"minimum_term_days"`
+				MaximumTerm             int                     `json:"maximum_term_days"`
+				RepaymentIntervalDays   int                     `json:"repayment_interval_days"`
+				GraceDays               int                     `json:"grace_days"`
+				AllocationOrder         []string                `json:"allocation_order"`
+				AllowedApplicantRoles   []string                `json:"allowed_applicant_roles"`
+				RequiredDocumentTypes   []string                `json:"required_document_types"`
+				ApplicationRequirements map[string]Requirements `json:"application_requirements"`
 			} `json:"configuration"`
 		} `json:"version"`
 	}
 	if err = json.NewDecoder(res.Body).Decode(&out); err != nil {
 		return Policy{}, err
 	}
-	if out.TenantID != tenantID || out.Lifecycle != "active" || out.Version == nil || out.ActiveVersion == nil || *out.ActiveVersion != out.Version.Version {
+	if out.ID != id || out.TenantID != tenantID || out.Lifecycle != "active" || out.Version == nil || out.ActiveVersion == nil || *out.ActiveVersion != out.Version.Version {
 		return Policy{}, ErrNotFound
 	}
 	c := out.Version.Configuration
-	return Policy{ID: out.ID, TenantID: out.TenantID, Code: out.Code, Currency: out.Version.Currency, Version: out.Version.Version, MinimumAmount: c.MinimumAmount, MaximumAmount: c.MaximumAmount, MinimumTermDays: c.MinimumTerm, MaximumTermDays: c.MaximumTerm, RepaymentIntervalDays: c.RepaymentIntervalDays, GraceDays: c.GraceDays, AllocationOrder: c.AllocationOrder, AllowedApplicantRoles: c.AllowedApplicantRoles, Active: true}, nil
+	return Policy{ID: out.ID, TenantID: out.TenantID, Code: out.Code, Currency: out.Version.Currency, Version: out.Version.Version, MinimumAmount: c.MinimumAmount, MaximumAmount: c.MaximumAmount, MinimumTermDays: c.MinimumTerm, MaximumTermDays: c.MaximumTerm, RepaymentIntervalDays: c.RepaymentIntervalDays, GraceDays: c.GraceDays, AllocationOrder: c.AllocationOrder, AllowedApplicantRoles: c.AllowedApplicantRoles, RequiredDocumentTypes: c.RequiredDocumentTypes, ApplicationRequirements: c.ApplicationRequirements, Active: true}, nil
 }

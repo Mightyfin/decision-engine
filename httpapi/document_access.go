@@ -59,7 +59,7 @@ func (s Server) documentAccess(w http.ResponseWriter, r *http.Request) {
 		write(w, 409, map[string]string{"error": "case_scope_unverified"})
 		return
 	}
-	if in.Intent == "upload" && a.Status != "pending_review" && a.Status != "awaiting_information" {
+	if in.Intent == "upload" && a.Status != "draft" && a.Status != "pending_review" && a.Status != "awaiting_information" {
 		write(w, 409, map[string]string{"error": "case_not_accepting_uploads"})
 		return
 	}

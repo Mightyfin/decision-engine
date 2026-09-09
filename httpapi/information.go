@@ -64,12 +64,23 @@ func (s Server) information(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
+		hasQuestionnaire := false
+		if drafts, ok := s.Applications.(interface {
+			GetDraft(context.Context, string, string, string) (creditrisk.Draft, error)
+		}); ok {
+			_, err := drafts.GetDraft(r.Context(), id, tenant, p.Environment)
+			if err != nil && !errors.Is(err, creditrisk.ErrNotFound) {
+				write(w, 503, map[string]string{"error": "questionnaire_unavailable"})
+				return
+			}
+			hasQuestionnaire = err == nil
+		}
 		message, err := store.InformationMessage(r.Context(), tenant, id)
 		if err != nil {
 			write(w, 503, map[string]string{"error": "workflow_unavailable"})
 			return
 		}
-		write(w, 200, map[string]any{"application_id": id, "status": a.Status, "review_revision": revision, "information_requested": message, "assessment_context": a.AssessmentContext(), "environment": a.Environment})
+		write(w, 200, map[string]any{"application_id": id, "questionnaire_available": hasQuestionnaire, "status": a.Status, "review_revision": revision, "information_requested": message, "assessment_context": a.AssessmentContext(), "environment": a.Environment})
 		return
 	}
 	var in struct {

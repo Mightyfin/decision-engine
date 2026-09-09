@@ -13,7 +13,8 @@ type reviewStore interface {
 }
 
 func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.principal(w, r, "credit_analyst"); !ok {
+	principal, ok := s.principal(w, r, "credit_analyst")
+	if !ok {
 		return
 	}
 	version := ""
@@ -55,9 +56,23 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		offerData = offer
 	}
+	var questionnaire *creditrisk.Questionnaire
+	if reader, ok := s.Applications.(interface {
+		ReviewQuestionnaire(context.Context, string, string, string) (*creditrisk.Questionnaire, error)
+	}); ok {
+		questionnaire, err = reader.ReviewQuestionnaire(r.Context(), a.ID, a.TenantID, principal.Environment)
+		if errors.Is(err, creditrisk.ErrNotFound) {
+			write(w, 404, map[string]string{"error": "not_found"})
+			return
+		}
+		if err != nil {
+			write(w, 503, map[string]string{"error": "questionnaire_unavailable"})
+			return
+		}
+	}
 	events := []map[string]any{}
 	for _, e := range history {
 		events = append(events, map[string]any{"actor": e.Actor, "action": e.Action, "reason": e.Reason, "at": e.At})
 	}
-	write(w, 200, map[string]any{"application": a, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
+	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
 }
