@@ -31,6 +31,28 @@ func testTenantEvents(t *testing.T, pool *pgxpool.Pool) {
 	if strings.Contains(payload, "PRIVATE") || !strings.Contains(payload, "app_owner") {
 		t.Fatal("unsafe or unscoped event", payload)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE credit_applications SET status='offered' WHERE id=$1`, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	offer := creditrisk.Offer{ApplicationID: a.ID, QuoteID: "ownership_quote", ProductPolicyVersion: 1, PricingPolicyVersion: 1, Principal: 1000, Total: 1000, TermDays: 30, ExpiresAt: time.Now().Add(time.Hour)}
+	offer.AllocationOrder = []string{"penalty", "fees", "interest", "principal"}
+	offer.InstallmentCount = 1
+	offer.RepaymentIntervalDays = 30
+	offer.PenaltyBasis = "overdue_principal"
+	if err := s.SaveOffer(ctx, offer); err != nil {
+		t.Fatal(err)
+	}
+	a.Status = "accepted"
+	audit.Action = "accepted"
+	if err := s.RecordAcceptanceWithEvent(ctx, a, audit, offer); err != nil {
+		t.Fatal(err)
+	}
+	var caller string
+	if err := pool.QueryRow(ctx, `SELECT payload->>'caller_application_id' FROM credit_outbox WHERE aggregate_id=$1 AND event_type='credit.offer.accepted'`, a.ID).Scan(&caller); err != nil || caller != "app_owner" {
+		t.Fatal("handoff lost original owner", caller, err)
+	}
+	a.Status = "pending_review"
+	audit.Action = "submitted"
 	if _, err := pool.Exec(ctx, `ALTER TABLE credit_outbox ADD CONSTRAINT reject_status_test CHECK(event_type<>'credit.application.status_changed') NOT VALID`); err != nil {
 		t.Fatal(err)
 	}

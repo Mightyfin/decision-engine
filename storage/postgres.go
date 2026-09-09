@@ -89,7 +89,15 @@ func recordAcceptanceWithEvent(ctx context.Context, tx pgx.Tx, a creditrisk.Appl
 	// This is a handoff fact, not a disbursement instruction.  Consumers may
 	// create an operational funding case, but must apply their own controls
 	// before reserving funds, posting to a ledger, or creating a loan.
+	// Carry the original API application's ownership, never the staff member
+	// accepting/reviewing the offer. Unknown legacy ownership stays unknown.
+	var caller string
+	err := tx.QueryRow(ctx, `SELECT COALESCE(NULLIF(d.caller_application_id,''),e.caller_application_id,'') FROM credit_applications a LEFT JOIN credit_application_environments e ON e.application_id=a.id LEFT JOIN credit_application_drafts d ON d.application_id=a.id WHERE a.id=$1 AND a.tenant_id=$2`, a.ID, a.TenantID).Scan(&caller)
+	if err != nil {
+		return err
+	}
 	payload, err := json.Marshal(map[string]any{
+		"caller_application_id":   caller,
 		"application_id":          a.ID,
 		"tenant_id":               a.TenantID,
 		"offer_quote_id":          offer.QuoteID,
