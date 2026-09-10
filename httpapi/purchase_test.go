@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
 	"net/http/httptest"
 	"strings"
@@ -70,5 +71,43 @@ func TestTenantCannotReadStaffReviewWithAnalystRole(t *testing.T) {
 	server.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/v1/internal/tenants/t/credit/applications/a/review", nil))
 	if w.Code != 403 || f.calls != 0 {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+type destinationVerifierFunc func(context.Context, string, creditrisk.PurchaseRestriction) (creditrisk.DestinationVerification, error)
+
+func (f destinationVerifierFunc) Verify(ctx context.Context, tenant string, p creditrisk.PurchaseRestriction) (creditrisk.DestinationVerification, error) {
+	return f(ctx, tenant, p)
+}
+
+func TestPurchaseRestrictionVerificationFailureNeverWrites(t *testing.T) {
+	for _, failure := range []string{"not_configured", "unavailable", "wrong_tenant", "wrong_environment", "wrong_wallet", "stale"} {
+		t.Run(failure, func(t *testing.T) {
+			store := &purchaseFixture{}
+			server := Server{Auth: testAuth{Principal{Subject: "analyst", Environment: "sandbox", Roles: map[string]bool{"credit_analyst": true}}}, Applications: store}
+			if failure != "not_configured" {
+				server.DestinationVerifier = destinationVerifierFunc(func(ctx context.Context, tenant string, p creditrisk.PurchaseRestriction) (creditrisk.DestinationVerification, error) {
+					proof, _ := store.Verify(ctx, tenant, p)
+					switch failure {
+					case "unavailable":
+						return proof, errors.New("private provider detail")
+					case "wrong_tenant":
+						proof.TenantID = "another-tenant"
+					case "wrong_environment":
+						proof.Environment = "production"
+					case "wrong_wallet":
+						proof.WalletID = "substituted-wallet"
+					case "stale":
+						proof.VerifiedAt = time.Now().Add(-2 * time.Minute)
+					}
+					return proof, nil
+				})
+			}
+			w := httptest.NewRecorder()
+			server.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/v1/internal/tenants/t/credit/applications/a/purchase-restriction", strings.NewReader(purchaseBody)))
+			if w.Code != 503 || store.calls != 0 || strings.Contains(w.Body.String(), "private provider detail") {
+				t.Fatal("verification failure must not write or leak provider details", w.Code, store.calls, w.Body.String())
+			}
+		})
 	}
 }
