@@ -9,7 +9,10 @@ import (
 // Until approved usage snapshots and capacity execution are implemented, this
 // adapter may only map the historical cash contract. Never silently drop a new
 // product's financial restrictions while constructing an executable policy.
-func supportsUsage(raw json.RawMessage) bool {
+func supportsUsage(raw json.RawMessage) bool { return SupportsUsage(raw) }
+
+// SupportsUsage fails closed until controlled capacity execution is released.
+func SupportsUsage(raw json.RawMessage) bool {
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return true
 	}

@@ -24,6 +24,18 @@ func TestHTTPStoreMapsActiveLoanProduct(t *testing.T) {
 	}
 }
 
+func TestHTTPStorePreservesExplicitUsage(t *testing.T) {
+	const usage = `{"funding_mode":"borrower_cash","destination_rule":"borrower_wallet","repayment_restoration":"none"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"p","tenant_id":"t","family":"term_loan","lifecycle":"active","active_version":1,"version":{"version":1,"currency":"ZMW","configuration":{"usage_terms":` + usage + `}}}`))
+	}))
+	defer server.Close()
+	p, err := (HTTPStore{BaseURL: server.URL}).Policy(WithBearerToken(context.Background(), "token"), "t", "p")
+	if err != nil || string(p.UsageTerms) != usage {
+		t.Fatal("adapter lost usage snapshot", err)
+	}
+}
+
 func TestHTTPStoreRejectsNonCreditFamiliesAndInvalidFraming(t *testing.T) {
 	valid := `{"id":"prd_1","tenant_id":"ten_1","family":"term_loan","lifecycle":"active","active_version":1,"version":{"version":1,"currency":"ZMW","configuration":{}}}`
 	for _, raw := range []string{

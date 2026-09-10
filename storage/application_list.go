@@ -24,7 +24,7 @@ func (s Postgres) ListApplications(ctx context.Context, scope creditrisk.Applica
 			return nil, creditrisk.ErrInvalidCursor
 		}
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT a.id,a.tenant_id,e.environment,a.product_policy_id,a.relationship_id,a.currency,a.purpose,a.status,a.amount,a.term_days,a.submitted_at,COALESCE(a.party_id,''),COALESCE(a.applicant_role,''),COALESCE(a.wallet_id,''),COALESCE(a.origin,''),a.product_policy_version,a.repayment_interval_days,a.grace_days,a.allocation_order`+visible+`
+	rows, err := s.Pool.Query(ctx, `SELECT a.id,a.tenant_id,e.environment,a.product_policy_id,a.relationship_id,a.currency,a.purpose,a.status,a.amount,a.term_days,a.submitted_at,COALESCE(a.party_id,''),COALESCE(a.applicant_role,''),COALESCE(a.wallet_id,''),COALESCE(a.origin,''),a.product_policy_version,a.repayment_interval_days,a.grace_days,a.allocation_order,a.usage_terms`+visible+`
 	 AND ($4='' OR a.id>$4) AND ($5='' OR a.status=$5) AND ($6='' OR a.relationship_id=$6)
 	 ORDER BY a.id LIMIT $7`, append(args, filter.Cursor, filter.Status, filter.RelationshipID, filter.Limit)...)
 	if err != nil {
@@ -34,7 +34,7 @@ func (s Postgres) ListApplications(ctx context.Context, scope creditrisk.Applica
 	items := []creditrisk.Application{}
 	for rows.Next() {
 		var a creditrisk.Application
-		if err := rows.Scan(&a.ID, &a.TenantID, &a.Environment, &a.ProductPolicyID, &a.RelationshipID, &a.Currency, &a.Purpose, &a.Status, &a.Amount, &a.TermDays, &a.SubmittedAt, &a.PartyID, &a.ApplicantRole, &a.WalletID, &a.Origin, &a.ProductPolicyVersion, &a.RepaymentIntervalDays, &a.GraceDays, &a.AllocationOrder); err != nil {
+		if err := rows.Scan(&a.ID, &a.TenantID, &a.Environment, &a.ProductPolicyID, &a.RelationshipID, &a.Currency, &a.Purpose, &a.Status, &a.Amount, &a.TermDays, &a.SubmittedAt, &a.PartyID, &a.ApplicantRole, &a.WalletID, &a.Origin, &a.ProductPolicyVersion, &a.RepaymentIntervalDays, &a.GraceDays, &a.AllocationOrder, &a.UsageTerms); err != nil {
 			return nil, err
 		}
 		items = append(items, a)

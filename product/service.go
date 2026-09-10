@@ -2,6 +2,7 @@ package product
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ var ErrNotFound = errors.New("product policy not found")
 
 // Policy is the product-engine output. It has no payment or accounting behaviour.
 type Policy struct {
+	UsageTerms                       json.RawMessage `json:"usage_terms,omitempty"`
 	ID, TenantID, Code, Currency     string
 	Version                          int
 	MinimumAmount, MaximumAmount     int64 // minor units
@@ -39,6 +41,9 @@ func (s Service) Validate(ctx context.Context, tenantID, policyID, currency stri
 	// All adapters must satisfy the same ownership boundary. A cached or local
 	// store must not be able to substitute another tenant's policy.
 	if p.TenantID != tenantID || p.ID != policyID {
+		return Policy{}, ErrNotFound
+	}
+	if !supportsUsage(p.UsageTerms) {
 		return Policy{}, ErrNotFound
 	}
 	// Reject malformed configuration rather than allowing invalid ranges to

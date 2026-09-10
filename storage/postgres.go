@@ -10,6 +10,7 @@ import (
 
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
 	"github.com/Mightyfin/decision-engine/pricing"
+	"github.com/Mightyfin/decision-engine/product"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -80,6 +81,13 @@ func (s Postgres) RecordAcceptanceWithEvent(ctx context.Context, a creditrisk.Ap
 }
 
 func recordAcceptanceWithEvent(ctx context.Context, tx pgx.Tx, a creditrisk.Application, audit creditrisk.Audit, offer creditrisk.Offer) error {
+	var usage json.RawMessage
+	if err := tx.QueryRow(ctx, `SELECT usage_terms FROM credit_offers WHERE application_id=$1 AND quote_id=$2`, a.ID, offer.QuoteID).Scan(&usage); err != nil {
+		return err
+	}
+	if !product.SupportsUsage(usage) {
+		return creditrisk.ErrInvalidState
+	}
 	if err := acceptApplication(ctx, tx, a, offer.QuoteID); err != nil {
 		return err
 	}
@@ -98,6 +106,7 @@ func recordAcceptanceWithEvent(ctx context.Context, tx pgx.Tx, a creditrisk.Appl
 	}
 	payload, err := json.Marshal(map[string]any{
 		"caller_application_id":   caller,
+		"usage_terms":             usage,
 		"application_id":          a.ID,
 		"tenant_id":               a.TenantID,
 		"offer_quote_id":          offer.QuoteID,
@@ -176,7 +185,7 @@ func (s Postgres) PricingPolicy(ctx context.Context, tenantID, productPolicyID s
 }
 func (s Postgres) Application(ctx context.Context, id string) (creditrisk.Application, error) {
 	var a creditrisk.Application
-	err := s.Pool.QueryRow(ctx, `SELECT id,tenant_id,product_policy_id,relationship_id,COALESCE(party_id,''),COALESCE(applicant_role,''),COALESCE(wallet_id,''),COALESCE(origin,''),currency,purpose,status,amount,term_days,product_policy_version,repayment_interval_days,grace_days,allocation_order,submitted_at FROM credit_applications WHERE id=$1`, id).Scan(&a.ID, &a.TenantID, &a.ProductPolicyID, &a.RelationshipID, &a.PartyID, &a.ApplicantRole, &a.WalletID, &a.Origin, &a.Currency, &a.Purpose, &a.Status, &a.Amount, &a.TermDays, &a.ProductPolicyVersion, &a.RepaymentIntervalDays, &a.GraceDays, &a.AllocationOrder, &a.SubmittedAt)
+	err := s.Pool.QueryRow(ctx, `SELECT id,tenant_id,product_policy_id,relationship_id,COALESCE(party_id,''),COALESCE(applicant_role,''),COALESCE(wallet_id,''),COALESCE(origin,''),currency,purpose,status,amount,term_days,product_policy_version,repayment_interval_days,grace_days,allocation_order,submitted_at,usage_terms FROM credit_applications WHERE id=$1`, id).Scan(&a.ID, &a.TenantID, &a.ProductPolicyID, &a.RelationshipID, &a.PartyID, &a.ApplicantRole, &a.WalletID, &a.Origin, &a.Currency, &a.Purpose, &a.Status, &a.Amount, &a.TermDays, &a.ProductPolicyVersion, &a.RepaymentIntervalDays, &a.GraceDays, &a.AllocationOrder, &a.SubmittedAt, &a.UsageTerms)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, creditrisk.ErrNotFound
 	}
@@ -193,7 +202,7 @@ func (s Postgres) ReviewQueuePage(ctx context.Context, tenantID string, limit in
 	if limit < 1 || limit > 101 {
 		limit = 21
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT id,tenant_id,product_policy_id,relationship_id,COALESCE(party_id,''),COALESCE(applicant_role,''),COALESCE(wallet_id,''),COALESCE(origin,''),currency,purpose,status,amount,term_days,product_policy_version,repayment_interval_days,grace_days,allocation_order,submitted_at FROM credit_applications WHERE tenant_id=$1 AND status='pending_review' AND ($3='' OR (submitted_at,id) > (SELECT submitted_at,id FROM credit_applications WHERE id=$3 AND tenant_id=$1)) ORDER BY submitted_at,id LIMIT $2`, tenantID, limit, after)
+	rows, err := s.Pool.Query(ctx, `SELECT id,tenant_id,product_policy_id,relationship_id,COALESCE(party_id,''),COALESCE(applicant_role,''),COALESCE(wallet_id,''),COALESCE(origin,''),currency,purpose,status,amount,term_days,product_policy_version,repayment_interval_days,grace_days,allocation_order,submitted_at,usage_terms FROM credit_applications WHERE tenant_id=$1 AND status='pending_review' AND ($3='' OR (submitted_at,id) > (SELECT submitted_at,id FROM credit_applications WHERE id=$3 AND tenant_id=$1)) ORDER BY submitted_at,id LIMIT $2`, tenantID, limit, after)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +210,7 @@ func (s Postgres) ReviewQueuePage(ctx context.Context, tenantID string, limit in
 	items := []creditrisk.Application{}
 	for rows.Next() {
 		var a creditrisk.Application
-		if err = rows.Scan(&a.ID, &a.TenantID, &a.ProductPolicyID, &a.RelationshipID, &a.PartyID, &a.ApplicantRole, &a.WalletID, &a.Origin, &a.Currency, &a.Purpose, &a.Status, &a.Amount, &a.TermDays, &a.ProductPolicyVersion, &a.RepaymentIntervalDays, &a.GraceDays, &a.AllocationOrder, &a.SubmittedAt); err != nil {
+		if err = rows.Scan(&a.ID, &a.TenantID, &a.ProductPolicyID, &a.RelationshipID, &a.PartyID, &a.ApplicantRole, &a.WalletID, &a.Origin, &a.Currency, &a.Purpose, &a.Status, &a.Amount, &a.TermDays, &a.ProductPolicyVersion, &a.RepaymentIntervalDays, &a.GraceDays, &a.AllocationOrder, &a.SubmittedAt, &a.UsageTerms); err != nil {
 			return nil, err
 		}
 		items = append(items, a)
@@ -216,7 +225,7 @@ func (s Postgres) SaveOffer(ctx context.Context, o creditrisk.Offer) error {
 }
 func (s Postgres) Offer(ctx context.Context, id string) (creditrisk.Offer, error) {
 	var o creditrisk.Offer
-	err := s.Pool.QueryRow(ctx, `SELECT application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at FROM credit_offers WHERE application_id=$1`, id).Scan(&o.ApplicationID, &o.QuoteID, &o.ProductPolicyVersion, &o.PricingPolicyVersion, &o.Principal, &o.Interest, &o.Fees, &o.Total, &o.TermDays, &o.InstallmentCount, &o.RepaymentIntervalDays, &o.GraceDays, &o.PenaltyRateBPS, &o.PenaltyBasis, &o.PenaltyCapBPS, &o.AllocationOrder, &o.ExpiresAt)
+	err := s.Pool.QueryRow(ctx, `SELECT application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at,usage_terms FROM credit_offers WHERE application_id=$1`, id).Scan(&o.ApplicationID, &o.QuoteID, &o.ProductPolicyVersion, &o.PricingPolicyVersion, &o.Principal, &o.Interest, &o.Fees, &o.Total, &o.TermDays, &o.InstallmentCount, &o.RepaymentIntervalDays, &o.GraceDays, &o.PenaltyRateBPS, &o.PenaltyBasis, &o.PenaltyCapBPS, &o.AllocationOrder, &o.ExpiresAt, &o.UsageTerms)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return o, creditrisk.ErrNotFound
 	}
@@ -234,11 +243,11 @@ type sqlExecutor interface {
 }
 
 func saveApplication(ctx context.Context, db sqlExecutor, a creditrisk.Application) error {
-	_, err := db.Exec(ctx, `INSERT INTO credit_applications(id,tenant_id,product_policy_id,relationship_id,party_id,applicant_role,wallet_id,origin,amount,currency,term_days,purpose,product_policy_version,repayment_interval_days,grace_days,allocation_order,status,submitted_at) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status`, a.ID, a.TenantID, a.ProductPolicyID, a.RelationshipID, a.PartyID, a.ApplicantRole, a.WalletID, a.Origin, a.Amount, a.Currency, a.TermDays, a.Purpose, a.ProductPolicyVersion, a.RepaymentIntervalDays, a.GraceDays, a.AllocationOrder, a.Status, a.SubmittedAt)
+	_, err := db.Exec(ctx, `INSERT INTO credit_applications(id,tenant_id,product_policy_id,relationship_id,party_id,applicant_role,wallet_id,origin,amount,currency,term_days,purpose,product_policy_version,repayment_interval_days,grace_days,allocation_order,status,submitted_at,usage_terms) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status`, a.ID, a.TenantID, a.ProductPolicyID, a.RelationshipID, a.PartyID, a.ApplicantRole, a.WalletID, a.Origin, a.Amount, a.Currency, a.TermDays, a.Purpose, a.ProductPolicyVersion, a.RepaymentIntervalDays, a.GraceDays, a.AllocationOrder, a.Status, a.SubmittedAt, a.UsageTerms)
 	return err
 }
 func saveOffer(ctx context.Context, db sqlExecutor, o creditrisk.Offer) error {
-	_, err := db.Exec(ctx, `INSERT INTO credit_offers(application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, o.ApplicationID, o.QuoteID, o.ProductPolicyVersion, o.PricingPolicyVersion, o.Principal, o.Interest, o.Fees, o.Total, o.TermDays, o.InstallmentCount, o.RepaymentIntervalDays, o.GraceDays, o.PenaltyRateBPS, o.PenaltyBasis, o.PenaltyCapBPS, o.AllocationOrder, o.ExpiresAt)
+	_, err := db.Exec(ctx, `INSERT INTO credit_offers(application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at,usage_terms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, o.ApplicationID, o.QuoteID, o.ProductPolicyVersion, o.PricingPolicyVersion, o.Principal, o.Interest, o.Fees, o.Total, o.TermDays, o.InstallmentCount, o.RepaymentIntervalDays, o.GraceDays, o.PenaltyRateBPS, o.PenaltyBasis, o.PenaltyCapBPS, o.AllocationOrder, o.ExpiresAt, o.UsageTerms)
 	return err
 }
 func appendAudit(ctx context.Context, db sqlExecutor, a creditrisk.Audit) error {

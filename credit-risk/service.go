@@ -2,6 +2,7 @@ package creditrisk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -20,44 +21,46 @@ var (
 var originPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 type Application struct {
-	Environment           string    `json:"environment,omitempty"`
-	ID                    string    `json:"id"`
-	TenantID              string    `json:"tenant_id"`
-	ProductPolicyID       string    `json:"product_policy_id"`
-	RelationshipID        string    `json:"relationship_id"`
-	PartyID               string    `json:"party_id,omitempty"`
-	ApplicantRole         string    `json:"applicant_role,omitempty"`
-	WalletID              string    `json:"wallet_id,omitempty"`
-	Origin                string    `json:"origin"`
-	Currency              string    `json:"currency"`
-	Purpose               string    `json:"purpose"`
-	Status                string    `json:"status"`
-	Amount                int64     `json:"amount_minor"`
-	TermDays              int       `json:"term_days"`
-	ProductPolicyVersion  int       `json:"product_policy_version"`
-	RepaymentIntervalDays int       `json:"repayment_interval_days"`
-	GraceDays             int       `json:"grace_days"`
-	AllocationOrder       []string  `json:"allocation_order"`
-	SubmittedAt           time.Time `json:"submitted_at,omitzero"`
+	UsageTerms            json.RawMessage `json:"usage_terms,omitempty"`
+	Environment           string          `json:"environment,omitempty"`
+	ID                    string          `json:"id"`
+	TenantID              string          `json:"tenant_id"`
+	ProductPolicyID       string          `json:"product_policy_id"`
+	RelationshipID        string          `json:"relationship_id"`
+	PartyID               string          `json:"party_id,omitempty"`
+	ApplicantRole         string          `json:"applicant_role,omitempty"`
+	WalletID              string          `json:"wallet_id,omitempty"`
+	Origin                string          `json:"origin"`
+	Currency              string          `json:"currency"`
+	Purpose               string          `json:"purpose"`
+	Status                string          `json:"status"`
+	Amount                int64           `json:"amount_minor"`
+	TermDays              int             `json:"term_days"`
+	ProductPolicyVersion  int             `json:"product_policy_version"`
+	RepaymentIntervalDays int             `json:"repayment_interval_days"`
+	GraceDays             int             `json:"grace_days"`
+	AllocationOrder       []string        `json:"allocation_order"`
+	SubmittedAt           time.Time       `json:"submitted_at,omitzero"`
 }
 type Offer struct {
-	ApplicationID         string    `json:"application_id"`
-	QuoteID               string    `json:"quote_id"`
-	ProductPolicyVersion  int       `json:"product_policy_version"`
-	PricingPolicyVersion  int       `json:"pricing_policy_version"`
-	Principal             int64     `json:"principal_minor"`
-	Interest              int64     `json:"interest_minor"`
-	Fees                  int64     `json:"fees_minor"`
-	Total                 int64     `json:"total_minor"`
-	TermDays              int       `json:"term_days"`
-	InstallmentCount      int       `json:"installment_count"`
-	RepaymentIntervalDays int       `json:"repayment_interval_days"`
-	GraceDays             int       `json:"grace_days"`
-	PenaltyRateBPS        int       `json:"penalty_rate_bps"`
-	PenaltyCapBPS         int       `json:"penalty_cap_bps"`
-	PenaltyBasis          string    `json:"penalty_basis"`
-	AllocationOrder       []string  `json:"allocation_order"`
-	ExpiresAt             time.Time `json:"expires_at"`
+	UsageTerms            json.RawMessage `json:"usage_terms,omitempty"`
+	ApplicationID         string          `json:"application_id"`
+	QuoteID               string          `json:"quote_id"`
+	ProductPolicyVersion  int             `json:"product_policy_version"`
+	PricingPolicyVersion  int             `json:"pricing_policy_version"`
+	Principal             int64           `json:"principal_minor"`
+	Interest              int64           `json:"interest_minor"`
+	Fees                  int64           `json:"fees_minor"`
+	Total                 int64           `json:"total_minor"`
+	TermDays              int             `json:"term_days"`
+	InstallmentCount      int             `json:"installment_count"`
+	RepaymentIntervalDays int             `json:"repayment_interval_days"`
+	GraceDays             int             `json:"grace_days"`
+	PenaltyRateBPS        int             `json:"penalty_rate_bps"`
+	PenaltyCapBPS         int             `json:"penalty_cap_bps"`
+	PenaltyBasis          string          `json:"penalty_basis"`
+	AllocationOrder       []string        `json:"allocation_order"`
+	ExpiresAt             time.Time       `json:"expires_at"`
 }
 type Exposure struct {
 	ApprovedLimit int64 `json:"approved_limit_minor"`
@@ -171,6 +174,7 @@ func (s Service) prepareApplication(ctx context.Context, a Application) (Applica
 	if !originPattern.MatchString(a.Origin) {
 		return Application{}, p, fmt.Errorf("unsupported credit origin")
 	}
+	a.UsageTerms = append(json.RawMessage(nil), p.UsageTerms...)
 	a.ProductPolicyVersion = p.Version
 	a.RepaymentIntervalDays = p.RepaymentIntervalDays
 	a.GraceDays = p.GraceDays
@@ -192,6 +196,9 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 	case "decline":
 		a.Status = "declined"
 	case "offer":
+		if !product.SupportsUsage(a.UsageTerms) {
+			return Application{}, ErrInvalidState
+		}
 		if policy.ProductPolicyID != a.ProductPolicyID || policy.ProductPolicyVersion != a.ProductPolicyVersion {
 			return Application{}, fmt.Errorf("pricing policy does not match application product version")
 		}
@@ -203,7 +210,7 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 			return Application{}, fmt.Errorf("quote currency does not match application")
 		}
 		a.Status = "offered"
-		offer = &Offer{ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, InstallmentCount: q.InstallmentCount, RepaymentIntervalDays: q.RepaymentIntervalDays, GraceDays: q.GraceDays, PenaltyRateBPS: q.PenaltyRateBPS, PenaltyCapBPS: q.PenaltyCapBPS, PenaltyBasis: q.PenaltyBasis, AllocationOrder: q.AllocationOrder, ExpiresAt: q.ExpiresAt}
+		offer = &Offer{UsageTerms: append(json.RawMessage(nil), a.UsageTerms...), ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, InstallmentCount: q.InstallmentCount, RepaymentIntervalDays: q.RepaymentIntervalDays, GraceDays: q.GraceDays, PenaltyRateBPS: q.PenaltyRateBPS, PenaltyCapBPS: q.PenaltyCapBPS, PenaltyBasis: q.PenaltyBasis, AllocationOrder: q.AllocationOrder, ExpiresAt: q.ExpiresAt}
 	default:
 		return Application{}, fmt.Errorf("unsupported manual decision")
 	}

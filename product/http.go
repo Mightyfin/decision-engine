@@ -101,5 +101,5 @@ func (s HTTPStore) Policy(ctx context.Context, tenantID, id string) (Policy, err
 	if !supportsUsage(c.UsageTerms) {
 		return Policy{}, ErrNotFound
 	}
-	return Policy{ID: out.ID, TenantID: out.TenantID, Code: out.Code, Currency: out.Version.Currency, Version: out.Version.Version, MinimumAmount: c.MinimumAmount, MaximumAmount: c.MaximumAmount, MinimumTermDays: c.MinimumTerm, MaximumTermDays: c.MaximumTerm, RepaymentIntervalDays: c.RepaymentIntervalDays, GraceDays: c.GraceDays, AllocationOrder: c.AllocationOrder, AllowedApplicantRoles: c.AllowedApplicantRoles, RequiredDocumentTypes: c.RequiredDocumentTypes, ApplicationRequirements: c.ApplicationRequirements, Active: true}, nil
+	return Policy{UsageTerms: append(json.RawMessage(nil), c.UsageTerms...), ID: out.ID, TenantID: out.TenantID, Code: out.Code, Currency: out.Version.Currency, Version: out.Version.Version, MinimumAmount: c.MinimumAmount, MaximumAmount: c.MaximumAmount, MinimumTermDays: c.MinimumTerm, MaximumTermDays: c.MaximumTerm, RepaymentIntervalDays: c.RepaymentIntervalDays, GraceDays: c.GraceDays, AllocationOrder: c.AllocationOrder, AllowedApplicantRoles: c.AllowedApplicantRoles, RequiredDocumentTypes: c.RequiredDocumentTypes, ApplicationRequirements: c.ApplicationRequirements, Active: true}, nil
 }

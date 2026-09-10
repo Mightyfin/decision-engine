@@ -150,4 +150,5 @@ func TestOfferAcceptanceDurableReplay(t *testing.T) {
 	t.Run("cancellation guards", func(t *testing.T) { testCancellationGuards(t, pool) })
 	t.Run("commercial review", func(t *testing.T) { testCommercialReview(t, pool) })
 	t.Run("tenant lifecycle events", func(t *testing.T) { testTenantEvents(t, pool) })
+	t.Run("immutable usage snapshots", func(t *testing.T) { testUsageSnapshots(t, pool) })
 }

@@ -23,7 +23,7 @@ func TestQueueCursorIsolationAndDecidedAnchor(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer pool.Close()
-	_, e = pool.Exec(ctx, `CREATE TEMP TABLE credit_applications(id text,tenant_id text,product_policy_id text DEFAULT 'product',relationship_id text DEFAULT 'relationship',party_id text,applicant_role text,wallet_id text,origin text,currency text DEFAULT 'ZMW',purpose text DEFAULT 'stock',status text DEFAULT 'pending_review',amount bigint DEFAULT 500000,term_days int DEFAULT 30,product_policy_version int DEFAULT 1,repayment_interval_days int DEFAULT 30,grace_days int DEFAULT 3,allocation_order text[] DEFAULT ARRAY['principal'],submitted_at timestamptz DEFAULT '2026-09-01'); INSERT INTO credit_applications(id,tenant_id) VALUES('a','tenant-a'),('b','tenant-a'),('c','tenant-b');`)
+	_, e = pool.Exec(ctx, `CREATE TEMP TABLE credit_applications(usage_terms jsonb,id text,tenant_id text,product_policy_id text DEFAULT 'product',relationship_id text DEFAULT 'relationship',party_id text,applicant_role text,wallet_id text,origin text,currency text DEFAULT 'ZMW',purpose text DEFAULT 'stock',status text DEFAULT 'pending_review',amount bigint DEFAULT 500000,term_days int DEFAULT 30,product_policy_version int DEFAULT 1,repayment_interval_days int DEFAULT 30,grace_days int DEFAULT 3,allocation_order text[] DEFAULT ARRAY['principal'],submitted_at timestamptz DEFAULT '2026-09-01'); INSERT INTO credit_applications(id,tenant_id) VALUES('a','tenant-a'),('b','tenant-a'),('c','tenant-b');`)
 	if e != nil {
 		t.Fatal(e)
 	}
