@@ -29,9 +29,22 @@ type Store interface {
 type Service struct{ Store Store }
 
 func (s Service) Validate(ctx context.Context, tenantID, policyID, currency string, amount int64, termDays int, applicantRole ...string) (Policy, error) {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(policyID) == "" {
+		return Policy{}, ErrNotFound
+	}
 	p, err := s.Store.Policy(ctx, tenantID, policyID)
 	if err != nil {
 		return Policy{}, err
+	}
+	// All adapters must satisfy the same ownership boundary. A cached or local
+	// store must not be able to substitute another tenant's policy.
+	if p.TenantID != tenantID || p.ID != policyID {
+		return Policy{}, ErrNotFound
+	}
+	// Reject malformed configuration rather than allowing invalid ranges to
+	// authorize a request. Amounts remain integer minor units; no defaults here.
+	if p.MinimumAmount <= 0 || p.MaximumAmount < p.MinimumAmount || p.MinimumTermDays <= 0 || p.MaximumTermDays < p.MinimumTermDays || len(p.Currency) != 3 || strings.Trim(p.Currency, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
+		return Policy{}, fmt.Errorf("invalid configured product policy")
 	}
 	if !p.Active || p.Version < 1 || strings.TrimSpace(currency) != p.Currency || amount < p.MinimumAmount || amount > p.MaximumAmount || termDays < p.MinimumTermDays || termDays > p.MaximumTermDays || p.RepaymentIntervalDays < 1 || p.GraceDays < 0 || !ValidAllocationOrder(p.AllocationOrder) {
 		return Policy{}, fmt.Errorf("request does not meet configured product policy")
