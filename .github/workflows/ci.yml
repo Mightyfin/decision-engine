@@ -6,12 +6,29 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: regression
+          POSTGRES_PASSWORD: regression
+          POSTGRES_DB: regression
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U regression -d regression"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DECISION_ENGINE_TEST_DATABASE_URL: postgres://regression:regression@127.0.0.1:5432/regression?sslmode=disable
+      EVENTBUS_TEST_NATS_URL: nats://127.0.0.1:4222
+      EFAAS_BRIDGE_TEST_NATS_URL: nats://127.0.0.1:4222
     steps:
       - uses: actions/checkout@v4
+      - name: Start isolated JetStream test broker
+        run: docker run -d --name ci-nats -p 127.0.0.1:4222:4222 nats:2.11-alpine -js
       - uses: actions/setup-go@v5
         with: {go-version: '1.25.13'}
       - run: test -z "$(gofmt -d auth cmd credit-risk eventbus httpapi migrations product pricing policies decisions audit storage)"
-      - run: go test ./...
+      - run: go test -p 1 -count=1 ./...
   image:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
