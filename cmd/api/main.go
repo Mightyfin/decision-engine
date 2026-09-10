@@ -17,6 +17,7 @@ import (
 	"github.com/Mightyfin/decision-engine/pricing"
 	"github.com/Mightyfin/decision-engine/product"
 	"github.com/Mightyfin/decision-engine/storage"
+	"github.com/Mightyfin/decision-engine/wallet"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -50,7 +51,8 @@ func main() {
 	}
 	store := storage.Postgres{Pool: pool}
 	credit := creditrisk.Service{Store: store, Products: product.Service{Store: product.HTTPStore{BaseURL: productURL}}, Pricing: pricing.QuoteFor}
-	server := &http.Server{Addr: address(), Handler: httpapi.Server{Auth: verifier, Credit: credit, Applications: store, Pricing: store, Policies: store, DocumentURL: os.Getenv("DECISION_ENGINE_DOCUMENT_BASE_URL")}.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	destinations := wallet.DestinationClient{BaseURL: os.Getenv("DECISION_ENGINE_WALLET_BASE_URL"), TokenURL: os.Getenv("DECISION_ENGINE_WALLET_TOKEN_URL"), ClientID: os.Getenv("DECISION_ENGINE_WALLET_CLIENT_ID"), ClientSecret: os.Getenv("DECISION_ENGINE_WALLET_CLIENT_SECRET"), ApplicationID: os.Getenv("DECISION_ENGINE_WALLET_APPLICATION_ID"), LegalEntityID: os.Getenv("DECISION_ENGINE_WALLET_LEGAL_ENTITY_ID"), Environment: environment}
+	server := &http.Server{Addr: address(), Handler: httpapi.Server{DestinationVerifier: destinations, Auth: verifier, Credit: credit, Applications: store, Pricing: store, Policies: store, DocumentURL: os.Getenv("DECISION_ENGINE_DOCUMENT_BASE_URL")}.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("server failed", "error", err)

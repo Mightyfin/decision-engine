@@ -39,6 +39,9 @@ type policyStore interface {
 	CreatePricingPolicy(context.Context, string, pricing.Policy) error
 }
 type Server struct {
+	DestinationVerifier interface {
+		Verify(context.Context, string, creditrisk.PurchaseRestriction) (creditrisk.DestinationVerification, error)
+	}
 	DocumentURL  string
 	Auth         Authenticator
 	Credit       creditrisk.Service

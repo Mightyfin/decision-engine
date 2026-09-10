@@ -31,6 +31,17 @@ func testPurchaseRestrictions(t *testing.T, pool *pgxpool.Pool) {
 	}
 	p := creditrisk.PurchaseRestriction{ApplicationID: a.ID, OrderReference: "ORDER-1", SupplierPartyID: "supplier", DestinationWalletID: "supplier-wallet", DocumentID: e.DocumentID, SHA256: e.SHA256, Currency: "ZMW", MaximumAmountMinor: 1000}
 	before := revision()
+	if err := s.RecordPurchaseRestriction(ctx, p, a.TenantID, "sandbox", "analyst", "invoice reviewed", before); !errors.Is(err, creditrisk.ErrEvidenceScope) {
+		t.Fatal("unverified destination admitted", err)
+	}
+	p.DestinationVerification = &creditrisk.DestinationVerification{WalletID: p.DestinationWalletID, PartyID: p.SupplierPartyID, LegalEntityID: "lender", TenantID: a.TenantID, Environment: a.Environment, Currency: p.Currency, Verification: "active_owned_wallet", VerifiedAt: time.Now().UTC()}
+	stale := p
+	copyProof := *p.DestinationVerification
+	copyProof.VerifiedAt = time.Now().Add(-2 * time.Minute)
+	stale.DestinationVerification = &copyProof
+	if err := s.RecordPurchaseRestriction(ctx, stale, a.TenantID, "sandbox", "analyst", "invoice reviewed", before); !errors.Is(err, creditrisk.ErrEvidenceScope) {
+		t.Fatal("stale proof admitted", err)
+	}
 	if err := s.RecordPurchaseRestriction(ctx, p, "foreign", "sandbox", "analyst", "invoice reviewed", before); !errors.Is(err, creditrisk.ErrNotFound) {
 		t.Fatal(err)
 	}

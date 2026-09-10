@@ -6,12 +6,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type purchaseFixture struct {
 	testStore
 	calls int
 	actor string
+}
+
+func (f *purchaseFixture) Verify(_ context.Context, tenant string, p creditrisk.PurchaseRestriction) (creditrisk.DestinationVerification, error) {
+	return creditrisk.DestinationVerification{WalletID: p.DestinationWalletID, PartyID: p.SupplierPartyID, Currency: p.Currency, TenantID: tenant, LegalEntityID: "lender", Environment: "sandbox", Verification: "active_owned_wallet", VerifiedAt: time.Now().UTC()}, nil
 }
 
 func (f *purchaseFixture) PurchaseRestriction(context.Context, string, string, string) (creditrisk.PurchaseRestriction, error) {
@@ -34,7 +39,7 @@ func TestPurchaseRestrictionStaffBoundary(t *testing.T) {
 			status               int
 		}{{"", "analyst", "sandbox", true, 200}, {"tenant", "analyst", "sandbox", true, 403}, {"", "analyst", "sandbox", false, 403}, {"", "", "sandbox", true, 403}, {"", "analyst", "", true, 403}} {
 			f := &purchaseFixture{}
-			server := Server{Auth: testAuth{Principal{TenantID: tc.tenant, Subject: tc.subject, Environment: tc.env, Roles: map[string]bool{"credit_analyst": tc.role}}}, Applications: f}
+			server := Server{DestinationVerifier: f, Auth: testAuth{Principal{TenantID: tc.tenant, Subject: tc.subject, Environment: tc.env, Roles: map[string]bool{"credit_analyst": tc.role}}}, Applications: f}
 			w := httptest.NewRecorder()
 			server.Handler().ServeHTTP(w, httptest.NewRequest(method, "/v1/internal/tenants/t/credit/applications/a/purchase-restriction", strings.NewReader(purchaseBody)))
 			if w.Code != tc.status || (tc.status == 403 && f.calls != 0) {

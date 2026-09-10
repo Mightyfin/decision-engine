@@ -70,6 +70,9 @@ var offerEvidenceSnapshot string
 //go:embed 00020_purchase_restrictions.sql
 var purchaseRestrictions string
 
+//go:embed 00021_purchase_destination_verification.sql
+var purchaseDestinationVerification string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -131,7 +134,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00019_offer_evidence_snapshot", offerEvidenceSnapshot); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00020_purchase_restrictions", purchaseRestrictions)
+	if err := apply(ctx, pool, "00020_purchase_restrictions", purchaseRestrictions); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00021_purchase_destination_verification", purchaseDestinationVerification)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

@@ -7,6 +7,7 @@ import (
 	creditrisk "github.com/Mightyfin/decision-engine/credit-risk"
 	"io"
 	"net/http"
+	"time"
 )
 
 type purchaseStore interface {
@@ -50,6 +51,20 @@ func (s Server) purchaseRestriction(w http.ResponseWriter, r *http.Request) {
 		restriction := creditrisk.PurchaseRestriction{ApplicationID: id, OrderReference: in.OrderReference, SupplierPartyID: in.SupplierPartyID, DestinationWalletID: in.DestinationWalletID, DocumentID: in.DocumentID, SHA256: in.SHA256, Currency: in.Currency, MaximumAmountMinor: in.MaximumAmountMinor}
 		if restriction.Validate() != nil {
 			write(w, 400, map[string]string{"error": "invalid_purchase_restriction"})
+			return
+		}
+		if s.DestinationVerifier == nil {
+			write(w, 503, map[string]string{"error": "destination_verification_unavailable"})
+			return
+		}
+		proof, err := s.DestinationVerifier.Verify(r.Context(), tenant, restriction)
+		if err != nil {
+			write(w, 503, map[string]string{"error": "destination_verification_unavailable"})
+			return
+		}
+		restriction.DestinationVerification = &proof
+		if !restriction.HasCurrentDestination(tenant, p.Environment, time.Now().UTC()) {
+			write(w, 503, map[string]string{"error": "destination_verification_unavailable"})
 			return
 		}
 		if err := store.RecordPurchaseRestriction(r.Context(), restriction, tenant, p.Environment, p.Subject, in.Reason, in.ReviewRevision); err != nil {
