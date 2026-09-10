@@ -33,6 +33,8 @@ func TestHTTPStoreRejectsNonCreditFamiliesAndInvalidFraming(t *testing.T) {
 		strings.Replace(valid, "term_loan", "", 1),
 		valid + ` {"extra":true}`,
 		valid + strings.Repeat(" ", 2<<20),
+		strings.Replace(valid, `"configuration":{}`, `"configuration":{"usage_terms":{"funding_mode":"restricted_goods","destination_rule":"approved_supplier","allow_partial_use":true,"usage_expiry_days":30,"repayment_restoration":"none"}}`, 1),
+		strings.Replace(valid, `"configuration":{}`, `"configuration":{"usage_terms":{"funding_mode":"borrower_cash","destination_rule":"borrower_wallet","allow_partial_use":true,"repayment_restoration":"none"}}`, 1),
 	} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(raw)) }))
 		_, err := (HTTPStore{BaseURL: server.URL}).Policy(WithBearerToken(context.Background(), "token"), "ten_1", "prd_1")
