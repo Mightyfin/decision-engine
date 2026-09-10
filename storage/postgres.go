@@ -19,11 +19,14 @@ import (
 type Postgres struct{ Pool *pgxpool.Pool }
 
 func (s Postgres) CreatePricingPolicy(ctx context.Context, tenantID string, p pricing.Policy) error {
+	if err := pricing.ValidateBorrowerCharges(p); err != nil {
+		return err
+	}
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE pricing_policies SET active=false WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true`, tenantID, p.ProductPolicyID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true)`, fmt.Sprintf("prc_%s_%d", p.ProductPolicyID, p.Version), tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.InterestMethod, p.RatePeriod, p.InterestRateBPS, p.FixedInterest, p.OriginationFeeBPS, p.PenaltyRateBPS, p.PenaltyBasis, p.PenaltyCapBPS)
+		_, err := tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,borrower_charges,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true)`, fmt.Sprintf("prc_%s_%d", p.ProductPolicyID, p.Version), tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.InterestMethod, p.RatePeriod, p.InterestRateBPS, p.FixedInterest, p.OriginationFeeBPS, p.PenaltyRateBPS, p.PenaltyBasis, p.PenaltyCapBPS, p.BorrowerCharges)
 		return err
 	})
 }
@@ -118,6 +121,9 @@ func recordAcceptanceWithEvent(ctx context.Context, tx pgx.Tx, a creditrisk.Appl
 		"product_policy_id":       a.ProductPolicyID,
 		"product_policy_version":  offer.ProductPolicyVersion,
 		"pricing_policy_version":  offer.PricingPolicyVersion,
+		"interest_method":         offer.InterestMethod,
+		"rate_period":             offer.RatePeriod,
+		"interest_rate_bps":       offer.InterestRateBPS,
 		"currency":                a.Currency,
 		"principal_minor":         offer.Principal,
 		"interest_minor":          offer.Interest,
@@ -131,6 +137,7 @@ func recordAcceptanceWithEvent(ctx context.Context, tx pgx.Tx, a creditrisk.Appl
 		"penalty_basis":           offer.PenaltyBasis,
 		"penalty_cap_bps":         offer.PenaltyCapBPS,
 		"allocation_order":        offer.AllocationOrder,
+		"charge_lines":            offer.ChargeLines,
 		"offer_expires_at":        offer.ExpiresAt.UTC().Format(time.RFC3339Nano),
 	})
 	if err != nil {
@@ -175,7 +182,7 @@ func (s Postgres) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
 // an EFaaS tenant request or a browser form.
 func (s Postgres) PricingPolicy(ctx context.Context, tenantID, productPolicyID string) (pricing.Policy, error) {
 	var p pricing.Policy
-	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,active FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true ORDER BY version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.ProductPolicyID, &p.Version, &p.AnnualRateBPS, &p.InterestMethod, &p.RatePeriod, &p.InterestRateBPS, &p.FixedInterest, &p.OriginationFeeBPS, &p.PenaltyRateBPS, &p.PenaltyBasis, &p.PenaltyCapBPS, &p.Active)
+	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,borrower_charges,active FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true ORDER BY version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.ProductPolicyID, &p.Version, &p.AnnualRateBPS, &p.InterestMethod, &p.RatePeriod, &p.InterestRateBPS, &p.FixedInterest, &p.OriginationFeeBPS, &p.PenaltyRateBPS, &p.PenaltyBasis, &p.PenaltyCapBPS, &p.BorrowerCharges, &p.Active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, creditrisk.ErrNotFound
 	}
@@ -226,7 +233,7 @@ func (s Postgres) SaveOffer(ctx context.Context, o creditrisk.Offer) error {
 }
 func (s Postgres) Offer(ctx context.Context, id string) (creditrisk.Offer, error) {
 	var o creditrisk.Offer
-	err := s.Pool.QueryRow(ctx, `SELECT application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at,usage_terms,evidence_snapshot,purchase_restriction FROM credit_offers WHERE application_id=$1`, id).Scan(&o.ApplicationID, &o.QuoteID, &o.ProductPolicyVersion, &o.PricingPolicyVersion, &o.Principal, &o.Interest, &o.Fees, &o.Total, &o.TermDays, &o.InstallmentCount, &o.RepaymentIntervalDays, &o.GraceDays, &o.PenaltyRateBPS, &o.PenaltyBasis, &o.PenaltyCapBPS, &o.AllocationOrder, &o.ExpiresAt, &o.UsageTerms, &o.EvidenceSnapshot, &o.PurchaseRestriction)
+	err := s.Pool.QueryRow(ctx, `SELECT application_id,quote_id,interest_method,rate_period,product_policy_version,pricing_policy_version,interest_rate_bps,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,charge_lines,expires_at,usage_terms,evidence_snapshot,purchase_restriction FROM credit_offers WHERE application_id=$1`, id).Scan(&o.ApplicationID, &o.QuoteID, &o.InterestMethod, &o.RatePeriod, &o.ProductPolicyVersion, &o.PricingPolicyVersion, &o.InterestRateBPS, &o.Principal, &o.Interest, &o.Fees, &o.Total, &o.TermDays, &o.InstallmentCount, &o.RepaymentIntervalDays, &o.GraceDays, &o.PenaltyRateBPS, &o.PenaltyBasis, &o.PenaltyCapBPS, &o.AllocationOrder, &o.ChargeLines, &o.ExpiresAt, &o.UsageTerms, &o.EvidenceSnapshot, &o.PurchaseRestriction)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return o, creditrisk.ErrNotFound
 	}
@@ -248,7 +255,19 @@ func saveApplication(ctx context.Context, db sqlExecutor, a creditrisk.Applicati
 	return err
 }
 func saveOffer(ctx context.Context, db sqlExecutor, o creditrisk.Offer) error {
-	_, err := db.Exec(ctx, `INSERT INTO credit_offers(application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at,usage_terms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, o.ApplicationID, o.QuoteID, o.ProductPolicyVersion, o.PricingPolicyVersion, o.Principal, o.Interest, o.Fees, o.Total, o.TermDays, o.InstallmentCount, o.RepaymentIntervalDays, o.GraceDays, o.PenaltyRateBPS, o.PenaltyBasis, o.PenaltyCapBPS, o.AllocationOrder, o.ExpiresAt, o.UsageTerms)
+	if o.InterestMethod == "" {
+		o.InterestMethod = "legacy"
+	}
+	if o.RatePeriod == "" {
+		o.RatePeriod = "legacy"
+	}
+	if len(o.ChargeLines) == 0 {
+		o.ChargeLines = []pricing.ChargeLine{{Code: "interest", Category: "interest", CalculationMethod: "legacy", RatePeriod: "legacy", TimeConvention: "legacy", Rounding: "legacy", Amount: o.Interest}}
+		if o.Fees > 0 {
+			o.ChargeLines = append(o.ChargeLines, pricing.ChargeLine{Code: "legacy_fee", Category: "fee", CalculationMethod: "legacy", Rounding: "legacy", Amount: o.Fees})
+		}
+	}
+	_, err := db.Exec(ctx, `INSERT INTO credit_offers(application_id,quote_id,interest_method,rate_period,product_policy_version,pricing_policy_version,interest_rate_bps,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,charge_lines,expires_at,usage_terms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`, o.ApplicationID, o.QuoteID, o.InterestMethod, o.RatePeriod, o.ProductPolicyVersion, o.PricingPolicyVersion, o.InterestRateBPS, o.Principal, o.Interest, o.Fees, o.Total, o.TermDays, o.InstallmentCount, o.RepaymentIntervalDays, o.GraceDays, o.PenaltyRateBPS, o.PenaltyBasis, o.PenaltyCapBPS, o.AllocationOrder, o.ChargeLines, o.ExpiresAt, o.UsageTerms)
 	return err
 }
 func appendAudit(ctx context.Context, db sqlExecutor, a creditrisk.Audit) error {

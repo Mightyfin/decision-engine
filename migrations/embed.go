@@ -73,6 +73,12 @@ var purchaseRestrictions string
 //go:embed 00021_purchase_destination_verification.sql
 var purchaseDestinationVerification string
 
+//go:embed 00022_offer_charge_breakdown.sql
+var offerChargeBreakdown string
+
+//go:embed 00023_borrower_charges.sql
+var borrowerCharges string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -137,7 +143,13 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00020_purchase_restrictions", purchaseRestrictions); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00021_purchase_destination_verification", purchaseDestinationVerification)
+	if err := apply(ctx, pool, "00021_purchase_destination_verification", purchaseDestinationVerification); err != nil {
+		return err
+	}
+	if err := apply(ctx, pool, "00022_offer_charge_breakdown", offerChargeBreakdown); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00023_borrower_charges", borrowerCharges)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

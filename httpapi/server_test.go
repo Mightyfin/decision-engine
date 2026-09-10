@@ -74,6 +74,16 @@ func (p testPricing) PricingPolicy(context.Context, string, string) (pricing.Pol
 	return p.policy, nil
 }
 
+type capturePricingPolicies struct {
+	tenant string
+	policy pricing.Policy
+}
+
+func (p *capturePricingPolicies) CreatePricingPolicy(_ context.Context, tenant string, policy pricing.Policy) error {
+	p.tenant, p.policy = tenant, policy
+	return nil
+}
+
 func TestSubmitRequiresWorkloadRoleAndUsesMinorUnits(t *testing.T) {
 	store := &testStore{applications: map[string]creditrisk.Application{}, offers: map[string]creditrisk.Offer{}}
 	policy := product.Policy{ID: "product_1", TenantID: "tenant_1", Currency: "ZMW", Version: 1, Active: true, MinimumAmount: 100, MaximumAmount: 10_000, MinimumTermDays: 7, MaximumTermDays: 90, RepaymentIntervalDays: 30, GraceDays: 3, AllocationOrder: []string{"penalty", "fees", "interest", "principal"}}
@@ -118,5 +128,27 @@ func TestStaffAnalystCanReviewAnotherTenantQueue(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "cap_1") {
 		t.Fatalf("expected tenant queue item, got %s", response.Body.String())
+	}
+}
+
+func TestPricingAdminCreatesItemisedBorrowerCharges(t *testing.T) {
+	policies := &capturePricingPolicies{}
+	server := Server{Auth: testAuth{Principal{Subject: "pricing-admin", Roles: map[string]bool{"credit_policy_admin": true}}}, Policies: policies}
+	body := `{"product_policy_id":"prd_1","version":2,"interest_method":"flat","rate_period":"monthly","interest_rate_bps":1600,"borrower_charges":[{"code":"management_fee","method":"percentage_of_principal","rate_bps":200},{"code":"communication_fee","method":"fixed_amount","fixed_amount_minor":5000}],"penalty_basis":"overdue_principal"}`
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/internal/tenants/tenant_1/credit/pricing-policies", strings.NewReader(body)))
+	if w.Code != http.StatusCreated || policies.tenant != "tenant_1" || len(policies.policy.BorrowerCharges) != 2 || policies.policy.BorrowerCharges[1].FixedAmount != 5000 {
+		t.Fatalf("status=%d policy=%+v body=%s", w.Code, policies.policy, w.Body.String())
+	}
+}
+
+func TestPricingAdminRejectsDuplicateBorrowerCharge(t *testing.T) {
+	policies := &capturePricingPolicies{}
+	server := Server{Auth: testAuth{Principal{Subject: "pricing-admin", Roles: map[string]bool{"credit_policy_admin": true}}}, Policies: policies}
+	body := `{"product_policy_id":"prd_1","version":2,"interest_method":"flat","rate_period":"monthly","interest_rate_bps":1600,"borrower_charges":[{"code":"service_fee","method":"fixed_amount","fixed_amount_minor":100},{"code":"service_fee","method":"fixed_amount","fixed_amount_minor":200}],"penalty_basis":"overdue_principal"}`
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/internal/tenants/tenant_1/credit/pricing-policies", strings.NewReader(body)))
+	if w.Code != http.StatusBadRequest || policies.policy.ProductPolicyID != "" {
+		t.Fatalf("status=%d policy=%+v body=%s", w.Code, policies.policy, w.Body.String())
 	}
 }

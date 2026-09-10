@@ -46,25 +46,29 @@ type Offer struct {
 	PurchaseRestriction *PurchaseRestriction `json:"-"`
 	// Nil means no historical snapshot exists; an empty non-nil slice means
 	// the snapshot was captured with no linked evidence. Not document approval.
-	EvidenceSnapshot      []Evidence      `json:"-"`
-	UsageTerms            json.RawMessage `json:"usage_terms,omitempty"`
-	ApplicationID         string          `json:"application_id"`
-	QuoteID               string          `json:"quote_id"`
-	ProductPolicyVersion  int             `json:"product_policy_version"`
-	PricingPolicyVersion  int             `json:"pricing_policy_version"`
-	Principal             int64           `json:"principal_minor"`
-	Interest              int64           `json:"interest_minor"`
-	Fees                  int64           `json:"fees_minor"`
-	Total                 int64           `json:"total_minor"`
-	TermDays              int             `json:"term_days"`
-	InstallmentCount      int             `json:"installment_count"`
-	RepaymentIntervalDays int             `json:"repayment_interval_days"`
-	GraceDays             int             `json:"grace_days"`
-	PenaltyRateBPS        int             `json:"penalty_rate_bps"`
-	PenaltyCapBPS         int             `json:"penalty_cap_bps"`
-	PenaltyBasis          string          `json:"penalty_basis"`
-	AllocationOrder       []string        `json:"allocation_order"`
-	ExpiresAt             time.Time       `json:"expires_at"`
+	EvidenceSnapshot      []Evidence           `json:"-"`
+	UsageTerms            json.RawMessage      `json:"usage_terms,omitempty"`
+	ApplicationID         string               `json:"application_id"`
+	QuoteID               string               `json:"quote_id"`
+	InterestMethod        string               `json:"interest_method"`
+	RatePeriod            string               `json:"rate_period"`
+	ProductPolicyVersion  int                  `json:"product_policy_version"`
+	PricingPolicyVersion  int                  `json:"pricing_policy_version"`
+	InterestRateBPS       int                  `json:"interest_rate_bps"`
+	Principal             int64                `json:"principal_minor"`
+	Interest              int64                `json:"interest_minor"`
+	Fees                  int64                `json:"fees_minor"`
+	Total                 int64                `json:"total_minor"`
+	TermDays              int                  `json:"term_days"`
+	InstallmentCount      int                  `json:"installment_count"`
+	RepaymentIntervalDays int                  `json:"repayment_interval_days"`
+	GraceDays             int                  `json:"grace_days"`
+	PenaltyRateBPS        int                  `json:"penalty_rate_bps"`
+	PenaltyCapBPS         int                  `json:"penalty_cap_bps"`
+	PenaltyBasis          string               `json:"penalty_basis"`
+	AllocationOrder       []string             `json:"allocation_order"`
+	ChargeLines           []pricing.ChargeLine `json:"charge_lines"`
+	ExpiresAt             time.Time            `json:"expires_at"`
 }
 type Exposure struct {
 	ApprovedLimit int64 `json:"approved_limit_minor"`
@@ -214,7 +218,7 @@ func (s Service) Decide(ctx context.Context, id, actor, decision, reason string,
 			return Application{}, fmt.Errorf("quote currency does not match application")
 		}
 		a.Status = "offered"
-		offer = &Offer{UsageTerms: append(json.RawMessage(nil), a.UsageTerms...), ApplicationID: a.ID, QuoteID: q.ID, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, InstallmentCount: q.InstallmentCount, RepaymentIntervalDays: q.RepaymentIntervalDays, GraceDays: q.GraceDays, PenaltyRateBPS: q.PenaltyRateBPS, PenaltyCapBPS: q.PenaltyCapBPS, PenaltyBasis: q.PenaltyBasis, AllocationOrder: q.AllocationOrder, ExpiresAt: q.ExpiresAt}
+		offer = &Offer{UsageTerms: append(json.RawMessage(nil), a.UsageTerms...), ApplicationID: a.ID, QuoteID: q.ID, InterestMethod: q.InterestMethod, RatePeriod: q.RatePeriod, ProductPolicyVersion: q.ProductPolicyVersion, PricingPolicyVersion: q.PricingPolicyVersion, InterestRateBPS: q.InterestRateBPS, Principal: q.Principal, Interest: q.Interest, Fees: q.Fees, Total: q.Total, TermDays: a.TermDays, InstallmentCount: q.InstallmentCount, RepaymentIntervalDays: q.RepaymentIntervalDays, GraceDays: q.GraceDays, PenaltyRateBPS: q.PenaltyRateBPS, PenaltyCapBPS: q.PenaltyCapBPS, PenaltyBasis: q.PenaltyBasis, AllocationOrder: q.AllocationOrder, ChargeLines: append([]pricing.ChargeLine(nil), q.ChargeLines...), ExpiresAt: q.ExpiresAt}
 	default:
 		return Application{}, fmt.Errorf("unsupported manual decision")
 	}
