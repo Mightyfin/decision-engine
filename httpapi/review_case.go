@@ -37,6 +37,35 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 		write(w, 503, map[string]string{"error": "review_unavailable"})
 		return
 	}
+	evidenceStatus := "integration_unavailable"
+	if reader, available := s.Applications.(evidenceReader); available {
+		if principal.Environment == "" {
+			write(w, 403, map[string]string{"error": "environment_required"})
+			return
+		}
+		scoped, scopeErr := reader.EvidenceApplication(r.Context(), a.ID)
+		if errors.Is(scopeErr, creditrisk.ErrNotFound) || (scopeErr == nil && (scoped.TenantID != a.TenantID || (scoped.Environment != "" && scoped.Environment != principal.Environment))) {
+			write(w, 404, map[string]string{"error": "not_found"})
+			return
+		}
+		if scopeErr != nil {
+			write(w, 503, map[string]string{"error": "evidence_unavailable"})
+			return
+		}
+		if scoped.Environment == "" {
+			evidenceStatus = "application_environment_unknown"
+		} else {
+			rows, readErr := reader.EvidencePage(r.Context(), a.ID, a.TenantID, principal.Environment, "", "", 1)
+			if readErr != nil {
+				write(w, 503, map[string]string{"error": "evidence_unavailable"})
+				return
+			}
+			evidenceStatus = "not_linked"
+			if len(rows) > 0 {
+				evidenceStatus = "linked"
+			}
+		}
+	}
 	store, ok := s.Applications.(reviewStore)
 	if !ok {
 		write(w, 503, map[string]string{"error": "review_unavailable"})
@@ -74,5 +103,5 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	for _, e := range history {
 		events = append(events, map[string]any{"actor": e.Actor, "action": e.Action, "reason": e.Reason, "at": e.At})
 	}
-	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": "not_linked"})
+	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": evidenceStatus})
 }
