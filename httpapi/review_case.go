@@ -103,5 +103,5 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	for _, e := range history {
 		events = append(events, map[string]any{"actor": e.Actor, "action": e.Action, "reason": e.Reason, "at": e.At})
 	}
-	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "history": events, "document_evidence_status": evidenceStatus})
+	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "offer_evidence_snapshot": offer.EvidenceSnapshot, "history": events, "document_evidence_status": evidenceStatus})
 }

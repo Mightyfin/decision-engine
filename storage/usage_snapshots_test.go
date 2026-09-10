@@ -18,6 +18,16 @@ func testUsageSnapshots(t *testing.T, pool *pgxpool.Pool) {
 	if err := s.CreateApplication(ctx, a, audit); err != nil {
 		t.Fatal(err)
 	}
+	// Synthetic verified version; production evidence binding requires the
+	// document service's ownership, version and scan checks first.
+	if _, err := pool.Exec(ctx, `UPDATE credit_applications SET party_id='snapshot-party' WHERE id=$1`, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	a.PartyID = "snapshot-party"
+	evidence := creditrisk.Evidence{ApplicationID: a.ID, TenantID: a.TenantID, Environment: "sandbox", PartyID: a.PartyID, DocumentID: "snapshot-invoice", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", DocumentType: "invoice", LinkedBy: "uploader"}
+	if err := s.BindEvidence(ctx, evidence); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE credit_applications SET usage_terms=NULL WHERE id=$1`, a.ID); err == nil {
 		t.Fatal("application snapshot mutable")
 	}
@@ -34,6 +44,7 @@ func testUsageSnapshots(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatal("offer omitted application usage")
 	}
 	o.UsageTerms = usage
+	o.EvidenceSnapshot = []creditrisk.Evidence{{DocumentID: "caller-injected"}}
 	a.Status = "offered"
 	audit.Action = "offer"
 	var version string
@@ -49,6 +60,16 @@ func testUsageSnapshots(t *testing.T, pool *pgxpool.Pool) {
 	o, err = s.Offer(ctx, a.ID)
 	if err != nil || len(o.UsageTerms) == 0 {
 		t.Fatal("offer read lost snapshot", err)
+	}
+	if len(o.EvidenceSnapshot) != 1 || o.EvidenceSnapshot[0].DocumentID != evidence.DocumentID || o.EvidenceSnapshot[0].SHA256 != evidence.SHA256 {
+		t.Fatal("offer lost authoritative evidence", o.EvidenceSnapshot)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE credit_offers SET evidence_snapshot='[]'::jsonb WHERE application_id=$1`, a.ID); err == nil {
+		t.Fatal("offer evidence changed")
+	}
+	evidence.DocumentID = "late-invoice"
+	if err := s.BindEvidence(ctx, evidence); err == nil {
+		t.Fatal("evidence linked after decision")
 	}
 	o.UsageTerms = nil // The persisted offer, not the in-memory caller, is the handoff authority.
 	a.Status = "accepted"

@@ -225,7 +225,7 @@ func (s Postgres) SaveOffer(ctx context.Context, o creditrisk.Offer) error {
 }
 func (s Postgres) Offer(ctx context.Context, id string) (creditrisk.Offer, error) {
 	var o creditrisk.Offer
-	err := s.Pool.QueryRow(ctx, `SELECT application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at,usage_terms FROM credit_offers WHERE application_id=$1`, id).Scan(&o.ApplicationID, &o.QuoteID, &o.ProductPolicyVersion, &o.PricingPolicyVersion, &o.Principal, &o.Interest, &o.Fees, &o.Total, &o.TermDays, &o.InstallmentCount, &o.RepaymentIntervalDays, &o.GraceDays, &o.PenaltyRateBPS, &o.PenaltyBasis, &o.PenaltyCapBPS, &o.AllocationOrder, &o.ExpiresAt, &o.UsageTerms)
+	err := s.Pool.QueryRow(ctx, `SELECT application_id,quote_id,product_policy_version,pricing_policy_version,principal,interest,fees,total,term_days,installment_count,repayment_interval_days,grace_days,penalty_rate_bps,penalty_basis,penalty_cap_bps,allocation_order,expires_at,usage_terms,evidence_snapshot FROM credit_offers WHERE application_id=$1`, id).Scan(&o.ApplicationID, &o.QuoteID, &o.ProductPolicyVersion, &o.PricingPolicyVersion, &o.Principal, &o.Interest, &o.Fees, &o.Total, &o.TermDays, &o.InstallmentCount, &o.RepaymentIntervalDays, &o.GraceDays, &o.PenaltyRateBPS, &o.PenaltyBasis, &o.PenaltyCapBPS, &o.AllocationOrder, &o.ExpiresAt, &o.UsageTerms, &o.EvidenceSnapshot)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return o, creditrisk.ErrNotFound
 	}
