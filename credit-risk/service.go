@@ -43,6 +43,7 @@ type Application struct {
 	SubmittedAt           time.Time       `json:"submitted_at,omitzero"`
 }
 type Offer struct {
+	PurchaseRestriction *PurchaseRestriction `json:"-"`
 	// Nil means no historical snapshot exists; an empty non-nil slice means
 	// the snapshot was captured with no linked evidence. Not document approval.
 	EvidenceSnapshot      []Evidence      `json:"-"`

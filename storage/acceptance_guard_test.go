@@ -31,6 +31,9 @@ func TestAcceptanceTransitionGuard(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := Postgres{Pool: p}
+	if _, e = p.Exec(ctx, `CREATE TEMP TABLE credit_purchase_restrictions(application_id text PRIMARY KEY)`); e != nil {
+		t.Fatal(e)
+	}
 	a := creditrisk.Application{ID: "a", TenantID: "t", Status: "accepted"}
 	// The same conditional transition is used inside the audit + outbox transaction.
 	attempt := func(a creditrisk.Application, q string) error {

@@ -10,6 +10,7 @@ import (
 )
 
 func testUsageSnapshots(t *testing.T, pool *pgxpool.Pool) {
+	testPurchaseRestrictions(t, pool)
 	ctx := context.Background()
 	s := Postgres{Pool: pool}
 	usage := json.RawMessage(`{"funding_mode":"borrower_cash","destination_rule":"borrower_wallet","allow_partial_use":false,"usage_expiry_days":0,"repayment_restoration":"none"}`)

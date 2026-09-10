@@ -17,6 +17,10 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if principal.TenantID != "" || principal.Subject == "" || principal.Environment == "" {
+		write(w, 403, map[string]string{"error": "staff_scope_required"})
+		return
+	}
 	version := ""
 	if versions, ok := s.Applications.(interface {
 		ReviewRevision(context.Context, string, string) (string, error)
@@ -100,8 +104,18 @@ func (s Server) reviewCase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	events := []map[string]any{}
+	var purchase *creditrisk.PurchaseRestriction
+	if reader, ok := s.Applications.(purchaseStore); ok {
+		item, readErr := reader.PurchaseRestriction(r.Context(), a.ID, a.TenantID, principal.Environment)
+		if readErr == nil {
+			purchase = &item
+		} else if !errors.Is(readErr, creditrisk.ErrNotFound) {
+			write(w, 503, map[string]string{"error": "purchase_review_unavailable"})
+			return
+		}
+	}
 	for _, e := range history {
 		events = append(events, map[string]any{"actor": e.Actor, "action": e.Action, "reason": e.Reason, "at": e.At})
 	}
-	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "offer": offerData, "offer_evidence_snapshot": offer.EvidenceSnapshot, "history": events, "document_evidence_status": evidenceStatus})
+	write(w, 200, map[string]any{"application": a, "questionnaire": questionnaire, "review_revision": version, "assessment_context": a.AssessmentContext(), "purchase_restriction": purchase, "offer_purchase_restriction": offer.PurchaseRestriction, "offer": offerData, "offer_evidence_snapshot": offer.EvidenceSnapshot, "history": events, "document_evidence_status": evidenceStatus})
 }

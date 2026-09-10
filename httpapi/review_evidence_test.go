@@ -41,7 +41,7 @@ func TestReviewEvidenceStatusUsesStoredBindings(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &reviewEvidenceStore{caseStore: caseStore{testStore: testStore{applications: map[string]creditrisk.Application{"a": {ID: "a", TenantID: "t"}}}}, environment: tc.environment, evidence: tc.rows, readError: tc.err}
-			server := Server{Auth: testAuth{Principal{Environment: "sandbox", Roles: map[string]bool{"credit_analyst": true}}}, Applications: store}
+			server := Server{Auth: testAuth{Principal{Subject: "analyst", Environment: "sandbox", Roles: map[string]bool{"credit_analyst": true}}}, Applications: store}
 			w := httptest.NewRecorder()
 			server.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/v1/internal/tenants/t/credit/applications/a/review", nil))
 			if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.want) {

@@ -47,7 +47,7 @@ func TestReviewQuestionnaireBoundaries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &questionnaireStore{caseStore: caseStore{testStore: testStore{applications: map[string]creditrisk.Application{"a": {ID: "a", TenantID: "t", Amount: 1000}}}}, failure: tc.failure, legacy: tc.legacy}
 			w := httptest.NewRecorder()
-			Server{Auth: testAuth{Principal{Environment: tc.env, Roles: map[string]bool{tc.role: true}}}, Applications: s}.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/v1/internal/tenants/"+tc.tenant+"/credit/applications/a/review", nil))
+			Server{Auth: testAuth{Principal{Subject: "analyst", Environment: tc.env, Roles: map[string]bool{tc.role: true}}}, Applications: s}.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/v1/internal/tenants/"+tc.tenant+"/credit/applications/a/review", nil))
 			if w.Code != tc.status || s.reads != tc.reads {
 				t.Fatalf("status=%d reads=%d %s", w.Code, s.reads, w.Body.String())
 			}

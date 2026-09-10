@@ -23,7 +23,7 @@ func TestReviewCaseScopeAndHistory(t *testing.T) {
 		status       int
 	}{{"credit_analyst", "t", 200}, {"credit_analyst", "other", 404}, {"tenant_admin", "t", 403}} {
 		s := &caseStore{testStore: testStore{applications: map[string]creditrisk.Application{"a": {ID: "a", TenantID: "t", Amount: 500000}}}}
-		h := Server{Auth: testAuth{Principal{Roles: map[string]bool{tc.role: true}}}, Applications: s}.Handler()
+		h := Server{Auth: testAuth{Principal{Subject: "analyst", Environment: "sandbox", Roles: map[string]bool{tc.role: true}}}, Applications: s}.Handler()
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", "/v1/internal/tenants/"+tc.tenant+"/credit/applications/a/review", nil))
 		if w.Code != tc.status {
