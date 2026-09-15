@@ -23,7 +23,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer pool.Close()
-	publisher, closePublisher, err := eventbus.NewPublisher(natsURL, os.Getenv("DECISION_ENGINE_NATS_TOKEN"), os.Getenv("DECISION_ENGINE_ENVIRONMENT"))
+	authOptions, err := eventbus.ConnectionCredentials(os.Getenv("DECISION_ENGINE_NATS_TOKEN"), os.Getenv("DECISION_ENGINE_NATS_USER"), os.Getenv("DECISION_ENGINE_NATS_PASSWORD"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	publisher, closePublisher, err := eventbus.NewPublisher(natsURL, "", os.Getenv("DECISION_ENGINE_ENVIRONMENT"), authOptions...)
 	if err != nil {
 		log.Fatal(err)
 	}
