@@ -81,12 +81,26 @@ func (s Server) Handler() http.Handler {
 	m.HandleFunc("GET /v1/internal/tenants/{tenant_id}/credit/applications/{id}/evidence", s.listEvidence)
 	m.HandleFunc("POST /v1/internal/credit/applications/{id}/decision", s.decide)
 	m.HandleFunc("POST /v1/internal/tenants/{tenant_id}/credit/pricing-policies", s.createPricingPolicy)
+	m.HandleFunc("POST /v1/internal/credit/default-pricing-policies", s.createPricingPolicy)
+	m.HandleFunc("PUT /v1/internal/tenants/{tenant_id}/credit/products/{product_id}/default-pricing", s.bindDefaultPricing)
 	return m
 }
 
 func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
-	_, ok := s.principal(w, r, "credit_policy_admin")
+	actor, ok := s.principal(w, r, "credit_policy_admin")
 	if !ok {
+		return
+	}
+	if actor.ApplicationID != "" {
+		write(w, 403, map[string]string{"error": "forbidden"})
+		return
+	}
+	tenantID := r.PathValue("tenant_id")
+	isDefault := r.URL.Path == "/v1/internal/credit/default-pricing-policies"
+	if isDefault {
+		tenantID = pricing.DefaultOwner
+	} else if tenantID == pricing.DefaultOwner {
+		write(w, 403, map[string]string{"error": "forbidden"})
 		return
 	}
 	if s.Policies == nil {
@@ -94,6 +108,7 @@ func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
+		Currency          string                         `json:"currency"`
 		ProductPolicyID   string                         `json:"product_policy_id"`
 		Version           int                            `json:"version"`
 		AnnualRateBPS     int                            `json:"annual_rate_bps"`
@@ -121,11 +136,16 @@ func (s Server) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
 		in.InterestRateBPS = in.AnnualRateBPS
 	}
 	policy := pricing.Policy{ProductPolicyID: in.ProductPolicyID, Version: in.Version, AnnualRateBPS: in.AnnualRateBPS, InterestMethod: in.InterestMethod, RatePeriod: in.RatePeriod, InterestRateBPS: in.InterestRateBPS, FixedInterest: in.FixedInterest, OriginationFeeBPS: in.OriginationFeeBPS, PenaltyRateBPS: in.PenaltyRateBPS, PenaltyBasis: in.PenaltyBasis, PenaltyCapBPS: in.PenaltyCapBPS, BorrowerCharges: in.BorrowerCharges, Active: true}
+	policy.Currency, policy.CreatedBy = in.Currency, actor.Subject
+	if (isDefault && len(in.Currency) != 3) || (in.Currency != "" && (len(in.Currency) != 3 || strings.Trim(in.Currency, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "")) {
+		write(w, 400, map[string]string{"error": "invalid_currency"})
+		return
+	}
 	if strings.TrimSpace(in.ProductPolicyID) == "" || in.Version < 1 || in.AnnualRateBPS < 0 || in.InterestRateBPS < 0 || in.FixedInterest < 0 || in.OriginationFeeBPS < 0 || in.PenaltyRateBPS < 0 || in.PenaltyCapBPS < 0 || strings.TrimSpace(in.PenaltyBasis) == "" || pricing.ValidateBorrowerCharges(policy) != nil {
 		write(w, 400, map[string]string{"error": "invalid_request"})
 		return
 	}
-	if err := s.Policies.CreatePricingPolicy(r.Context(), r.PathValue("tenant_id"), policy); err != nil {
+	if err := s.Policies.CreatePricingPolicy(r.Context(), tenantID, policy); err != nil {
 		write(w, 422, map[string]string{"error": "policy_rejected"})
 		return
 	}
@@ -352,6 +372,10 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	policy.ProductPolicyVersion = a.ProductPolicyVersion
+	if policy.Currency != "" && policy.Currency != a.Currency {
+		write(w, 422, map[string]string{"error": "pricing_currency_mismatch"})
+		return
+	}
 	policy.Currency = a.Currency
 	a, err = s.Credit.Decide(creditrisk.WithReviewVersion(r.Context(), in.Revision), a.ID, p.Subject, in.Decision, in.Reason, policy)
 	if err != nil {

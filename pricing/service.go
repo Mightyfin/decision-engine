@@ -9,6 +9,7 @@ import (
 
 // Policy belongs to the Pricing Engine. Rates are policy data, not approval logic.
 type Policy struct {
+	Source, SourcePolicyKey, CreatedBy                              string
 	ProductPolicyID                                                 string
 	ProductPolicyVersion, Version, AnnualRateBPS, OriginationFeeBPS int
 	InterestMethod, RatePeriod                                      string
@@ -53,6 +54,9 @@ type Quote struct {
 // explanation. Accounting treatment and beneficiaries are deliberately not
 // inferred by the calculator.
 type ChargeLine struct {
+	PricingSource     string `json:"pricing_source,omitempty"`
+	PricingPolicyKey  string `json:"pricing_policy_key,omitempty"`
+	PricingVersion    int    `json:"pricing_version,omitempty"`
 	Code              string `json:"code"`
 	Category          string `json:"category"`
 	CalculationMethod string `json:"calculation_method"`
@@ -152,6 +156,13 @@ func QuoteFor(p Policy, terms ScheduleTerms, principal int64, termDays int, now 
 		return Quote{}, err
 	}
 	installments := (termDays + terms.RepaymentIntervalDays - 1) / terms.RepaymentIntervalDays
+	for i := range lines {
+		lines[i].PricingSource = p.Source
+		lines[i].PricingPolicyKey = p.SourcePolicyKey
+		if p.Source != "" {
+			lines[i].PricingVersion = p.Version
+		}
+	}
 	return Quote{ID: fmt.Sprintf("qte_%d", now.UnixNano()), ProductPolicyID: p.ProductPolicyID, Currency: p.Currency, InterestMethod: method, RatePeriod: period, ProductPolicyVersion: p.ProductPolicyVersion, PricingPolicyVersion: p.Version, InterestRateBPS: rate, Principal: principal, Interest: interest, Fees: fees, Total: total, InstallmentCount: installments, RepaymentIntervalDays: terms.RepaymentIntervalDays, GraceDays: terms.GraceDays, PenaltyRateBPS: p.PenaltyRateBPS, PenaltyCapBPS: p.PenaltyCapBPS, PenaltyBasis: p.PenaltyBasis, AllocationOrder: append([]string(nil), terms.AllocationOrder...), ChargeLines: lines, ExpiresAt: now.UTC().Add(24 * time.Hour)}, nil
 }
 

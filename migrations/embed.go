@@ -79,6 +79,9 @@ var offerChargeBreakdown string
 //go:embed 00023_borrower_charges.sql
 var borrowerCharges string
 
+//go:embed 00024_default_pricing.sql
+var defaultPricing string
+
 func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS decision_engine_schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
@@ -149,7 +152,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := apply(ctx, pool, "00022_offer_charge_breakdown", offerChargeBreakdown); err != nil {
 		return err
 	}
-	return apply(ctx, pool, "00023_borrower_charges", borrowerCharges)
+	if err := apply(ctx, pool, "00023_borrower_charges", borrowerCharges); err != nil {
+		return err
+	}
+	return apply(ctx, pool, "00024_default_pricing", defaultPricing)
 }
 
 func apply(ctx context.Context, pool *pgxpool.Pool, version, source string) error {

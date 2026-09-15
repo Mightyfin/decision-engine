@@ -3,6 +3,7 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,11 +23,34 @@ func (s Postgres) CreatePricingPolicy(ctx context.Context, tenantID string, p pr
 	if err := pricing.ValidateBorrowerCharges(p); err != nil {
 		return err
 	}
+	if p.BorrowerCharges == nil {
+		p.BorrowerCharges = []pricing.BorrowerChargePolicy{}
+	}
 	return s.withTx(ctx, func(tx pgx.Tx) error {
+		// Serialize policy publication, including the first version, per owner/key.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, tenantID+"/"+p.ProductPolicyID); err != nil {
+			return err
+		}
+		var latest int
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(version),0) FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2`, tenantID, p.ProductPolicyID).Scan(&latest); err != nil {
+			return err
+		}
+		if p.Version <= latest {
+			return fmt.Errorf("pricing version must increase")
+		}
 		if _, err := tx.Exec(ctx, `UPDATE pricing_policies SET active=false WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true`, tenantID, p.ProductPolicyID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,borrower_charges,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true)`, fmt.Sprintf("prc_%s_%d", p.ProductPolicyID, p.Version), tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.InterestMethod, p.RatePeriod, p.InterestRateBPS, p.FixedInterest, p.OriginationFeeBPS, p.PenaltyRateBPS, p.PenaltyBasis, p.PenaltyCapBPS, p.BorrowerCharges)
+		identity, err := json.Marshal([]any{tenantID, p.ProductPolicyID, p.Version})
+		if err != nil {
+			return err
+		}
+		id := fmt.Sprintf("prc_%x", sha256.Sum256(identity))
+		_, err = tx.Exec(ctx, `INSERT INTO pricing_policies(id,tenant_id,product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,borrower_charges,active,configured_currency) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true,$15)`, id, tenantID, p.ProductPolicyID, p.Version, p.AnnualRateBPS, p.InterestMethod, p.RatePeriod, p.InterestRateBPS, p.FixedInterest, p.OriginationFeeBPS, p.PenaltyRateBPS, p.PenaltyBasis, p.PenaltyCapBPS, p.BorrowerCharges, p.Currency)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO credit_pricing_configuration_audit(tenant_id,product_policy_id,actor,action,configuration) VALUES($1,$2,$3,'publish_policy',$4)`, tenantID, p.ProductPolicyID, p.CreatedBy, p)
 		return err
 	})
 }
@@ -182,7 +206,15 @@ func (s Postgres) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
 // an EFaaS tenant request or a browser form.
 func (s Postgres) PricingPolicy(ctx context.Context, tenantID, productPolicyID string) (pricing.Policy, error) {
 	var p pricing.Policy
-	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,borrower_charges,active FROM pricing_policies WHERE tenant_id=$1 AND product_policy_id=$2 AND active=true ORDER BY version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.ProductPolicyID, &p.Version, &p.AnnualRateBPS, &p.InterestMethod, &p.RatePeriod, &p.InterestRateBPS, &p.FixedInterest, &p.OriginationFeeBPS, &p.PenaltyRateBPS, &p.PenaltyBasis, &p.PenaltyCapBPS, &p.BorrowerCharges, &p.Active)
+	if tenantID == "" || tenantID == pricing.DefaultOwner {
+		return p, creditrisk.ErrNotFound
+	}
+	err := s.Pool.QueryRow(ctx, `SELECT product_policy_id,version,annual_rate_bps,interest_method,rate_period,interest_rate_bps,fixed_interest,origination_fee_bps,penalty_rate_bps,penalty_basis,penalty_cap_bps,borrower_charges,active,configured_currency,CASE WHEN tenant_id=$1 THEN 'tenant_override' ELSE 'mightyfin_default' END
+ FROM pricing_policies WHERE active=true AND
+ ((tenant_id=$1 AND product_policy_id=$2) OR
+ (tenant_id='__mightyfin_default__' AND EXISTS(SELECT 1 FROM credit_default_pricing_bindings b WHERE b.tenant_id=$1 AND b.product_policy_id=$2 AND b.default_policy_key=pricing_policies.product_policy_id AND b.currency=pricing_policies.configured_currency)))
+ ORDER BY (tenant_id=$1) DESC, version DESC LIMIT 1`, tenantID, productPolicyID).Scan(&p.SourcePolicyKey, &p.Version, &p.AnnualRateBPS, &p.InterestMethod, &p.RatePeriod, &p.InterestRateBPS, &p.FixedInterest, &p.OriginationFeeBPS, &p.PenaltyRateBPS, &p.PenaltyBasis, &p.PenaltyCapBPS, &p.BorrowerCharges, &p.Active, &p.Currency, &p.Source)
+	p.ProductPolicyID = productPolicyID
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, creditrisk.ErrNotFound
 	}
