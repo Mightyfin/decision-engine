@@ -12,6 +12,7 @@ COPY migrations ./migrations
 COPY pricing ./pricing
 COPY product ./product
 COPY storage ./storage
+COPY wallet ./wallet
 RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/decision-engine-api ./cmd/api \
     && CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/decision-engine-migrate ./cmd/migrate \
     && CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/decision-engine-outbox-publisher ./cmd/outbox-publisher
